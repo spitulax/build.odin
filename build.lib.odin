@@ -6,6 +6,7 @@ import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:os"
+import "core:strings"
 import "core:sys/linux"
 import "core:time"
 
@@ -106,9 +107,12 @@ when ODIN_OS == .Linux {
     Process :: struct {
         pid:            linux.Pid,
         execution_time: time.Time,
+        stdout_pipe:    Maybe(_Pipe),
+        stderr_pipe:    Maybe(_Pipe),
     }
     process_wait :: proc(
         self: Process,
+        allocator := context.allocator,
         location := #caller_location,
     ) -> (
         result: Process_Result,
@@ -125,29 +129,34 @@ when ODIN_OS == .Linux {
                 )
                 return
             }
-            duration := time.since(self.execution_time)
+
+            if linux.WIFSIGNALED(status) || linux.WIFEXITED(status) {
+                result.duration = time.since(self.execution_time)
+                if stdout_pipe, stdout_pipe_ok := self.stdout_pipe.?; stdout_pipe_ok {
+                    stderr_pipe, stderr_pipe_ok := self.stderr_pipe.?
+                    assert(stderr_pipe_ok)
+                    result.stdout = _pipe_read(&stdout_pipe, location, allocator) or_return
+                    result.stderr = _pipe_read(&stderr_pipe, location, allocator) or_return
+                    _pipe_close_read(&stdout_pipe, location) or_return
+                    _pipe_close_read(&stderr_pipe, location) or_return
+                }
+            }
 
             if linux.WIFSIGNALED(status) {
-                result = {
-                    exit     = Signal(linux.WTERMSIG(status)),
-                    duration = duration,
-                }
+                result.exit = Signal(linux.WTERMSIG(status))
                 ok = true
                 return
             }
 
             if linux.WIFEXITED(status) {
-                result = {
-                    exit     = Exit(linux.WEXITSTATUS(status)),
-                    duration = duration,
-                }
+                result.exit = Exit(linux.WEXITSTATUS(status))
                 ok = true
                 return
             }
         }
     }
     process_wait_many :: proc(
-        processes: []Process,
+        selves: []Process,
         allocator := context.allocator,
         location := #caller_location,
     ) -> (
@@ -158,9 +167,9 @@ when ODIN_OS == .Linux {
         defer if !ok {
             results = nil
         }
-        results = make([]Process_Result, len(processes), allocator)
-        for process, i in processes {
-            process_result, process_ok := process_wait(process, location)
+        results = make([]Process_Result, len(selves), allocator, location)
+        for process, i in selves {
+            process_result, process_ok := process_wait(process, allocator, location)
             ok &&= process_ok
             results[i] = process_result
         }
@@ -170,11 +179,28 @@ when ODIN_OS == .Linux {
     Process_Result :: struct {
         exit:     Process_Exit,
         duration: time.Duration,
+        stdout:   string, // both are empty if run_cmd_* is not capturing
+        stderr:   string,
+    }
+    process_result_destroy :: proc(self: ^Process_Result) {
+        delete(self.stdout)
+        delete(self.stderr)
+    }
+    process_result_destroy_many :: proc(selves: []Process_Result) {
+        for &result in selves {
+            process_result_destroy(&result)
+        }
     }
 
-    // TODO: add option capture stdout and stderr or silence the command
+    Run_Cmd_Option :: enum {
+        Share,
+        Silent,
+        Capture,
+    }
+
     run_cmd_async :: proc(
         cmd: []string,
+        option: Run_Cmd_Option = .Share,
         location := #caller_location,
     ) -> (
         process: Process,
@@ -183,6 +209,20 @@ when ODIN_OS == .Linux {
         if len(cmd) < 1 {
             log.error("Command is empty", location = location)
             return
+        }
+
+        stdout_pipe, stderr_pipe: _Pipe
+        dev_null: linux.Fd
+        switch option {
+        case .Share:
+            break
+        case .Silent:
+            errno: linux.Errno
+            dev_null, errno = linux.open("/dev/null", {.WRONLY, .CREAT}, {.IWUSR, .IWGRP, .IWOTH})
+            assert(errno == .NONE)
+        case .Capture:
+            _pipe_init(&stdout_pipe, location)
+            _pipe_init(&stderr_pipe, location)
         }
 
         argv := make([dynamic]cstring, 0, len(cmd) + 2)
@@ -203,6 +243,21 @@ when ODIN_OS == .Linux {
         }
 
         if child_pid == 0 {
+            switch option {
+            case .Share:
+                break
+            case .Silent:
+                _fd_redirect(&dev_null, linux.Fd(os.stdout), location)
+                _fd_redirect(&dev_null, linux.Fd(os.stderr), location)
+                assert(linux.close(dev_null) == .NONE)
+            case .Capture:
+                _pipe_close_read(&stdout_pipe, location) or_return
+                _pipe_close_read(&stderr_pipe, location) or_return
+                _pipe_redirect(&stdout_pipe, linux.Fd(os.stdout), location)
+                _pipe_redirect(&stderr_pipe, linux.Fd(os.stderr), location)
+                _pipe_close_write(&stdout_pipe, location) or_return
+                _pipe_close_write(&stderr_pipe, location) or_return
+            }
             if errno := linux.execve(argv[0], raw_data(argv), _environ()); errno != .NONE {
                 log.errorf(
                     "Failed to run `%s`: %s",
@@ -216,19 +271,33 @@ when ODIN_OS == .Linux {
         }
         execution_time := time.now()
 
+        if (option == .Silent) {
+            assert(linux.close(dev_null) == .NONE)
+        }
+
         delete(argv)
-        return {pid = child_pid, execution_time = execution_time}, true
+        stdout_pipe_: Maybe(_Pipe) = (option == .Capture) ? stdout_pipe : nil
+        stderr_pipe_: Maybe(_Pipe) = (option == .Capture) ? stderr_pipe : nil
+        return {
+                pid = child_pid,
+                execution_time = execution_time,
+                stdout_pipe = stdout_pipe_,
+                stderr_pipe = stderr_pipe_,
+            },
+            true
     }
 
     run_cmd_sync :: proc(
         cmd: []string,
+        option: Run_Cmd_Option = .Share,
+        allocator := context.allocator,
         location := #caller_location,
     ) -> (
         result: Process_Result,
         ok: bool,
     ) {
-        process := run_cmd_async(cmd, location) or_return
-        return process_wait(process, location)
+        process := run_cmd_async(cmd, option, location) or_return
+        return process_wait(process, allocator, location)
     }
 
 
@@ -237,13 +306,113 @@ when ODIN_OS == .Linux {
         read:  linux.Fd,
         write: linux.Fd,
     }
-    _pipe_init :: proc(self: ^_Pipe) -> (ok: bool) {
+    _pipe_init :: proc(self: ^_Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
         if errno := linux.pipe2(&self._both, {.CLOEXEC}); errno != .NONE {
-            fmt.eprintfln("Failed to create pipes: %s", libc.strerror(i32(errno)))
+            log.errorf(
+                "Failed to create pipes: %s",
+                libc.strerror(i32(errno)),
+                location = location,
+            )
             return false
         }
         self.read = self._both[0]
         self.write = self._both[1]
+        return true
+    }
+    _pipe_close_read :: proc(self: ^_Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+        if errno := linux.close(self.read); errno != .NONE {
+            log.errorf(
+                "Failed to close read pipe: %s",
+                libc.strerror(i32(errno)),
+                location = location,
+            )
+            return false
+        }
+        return true
+    }
+    _pipe_close_write :: proc(self: ^_Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+        if errno := linux.close(self.write); errno != .NONE {
+            log.errorf(
+                "Failed to close write pipe: %s",
+                libc.strerror(i32(errno)),
+                location = location,
+            )
+            return false
+        }
+        return true
+    }
+    _pipe_redirect :: proc(
+        self: ^_Pipe,
+        newfd: linux.Fd,
+        location: runtime.Source_Code_Location,
+    ) -> (
+        ok: bool,
+    ) {
+        if _, errno := linux.dup2(self.write, newfd); errno != .NONE {
+            log.errorf(
+                "Failed to redirect oldfd: %v, newfd: %v: %s",
+                self.write,
+                newfd,
+                libc.strerror(i32(errno)),
+                location = location,
+            )
+            return false
+        }
+        return true
+    }
+    _pipe_read :: proc(
+        self: ^_Pipe,
+        location: runtime.Source_Code_Location,
+        allocator := context.allocator,
+    ) -> (
+        result: string,
+        ok: bool,
+    ) {
+        INITIAL_BUF_SIZE :: 1024
+        _pipe_close_write(self, location) or_return
+        total_bytes_read := 0
+        buf := make([dynamic]u8, INITIAL_BUF_SIZE)
+        defer delete(buf)
+        for {
+            bytes_read, errno := linux.read(self.read, buf[total_bytes_read:])
+            if bytes_read <= 0 {
+                break
+            }
+            if errno != .NONE {
+                log.errorf(
+                    "Failed to read pipe: %s",
+                    libc.strerror(i32(errno)),
+                    location = location,
+                )
+                return
+            }
+            total_bytes_read += bytes_read
+            if total_bytes_read >= len(buf) {
+                resize(&buf, 2 * len(buf))
+            }
+        }
+        result = strings.clone_from_cstring(cstring(raw_data(buf)), allocator, location)
+        ok = true
+        return
+    }
+
+    _fd_redirect :: proc(
+        fd: ^linux.Fd,
+        newfd: linux.Fd,
+        location: runtime.Source_Code_Location,
+    ) -> (
+        ok: bool,
+    ) {
+        if _, errno := linux.dup2(fd^, newfd); errno != .NONE {
+            log.errorf(
+                "Failed to redirect oldfd: %v, newfd: %v: %s",
+                fd,
+                newfd,
+                libc.strerror(i32(errno)),
+                location = location,
+            )
+            return false
+        }
         return true
     }
 
