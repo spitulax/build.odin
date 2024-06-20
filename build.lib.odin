@@ -10,17 +10,26 @@ import "core:sys/linux"
 import "core:time"
 
 _entry :: proc(start_func: proc() -> bool) {
-    defer free_all(context.temp_allocator)
-    context.logger = log.create_console_logger()
-    defer log.destroy_console_logger(context.logger)
-
-    track := os.get_env("BUILD_ODIN_TRACK_ALLOC", context.temp_allocator) == "1"
-    mem_track: mem.Tracking_Allocator
-    if track {
-        mem.tracking_allocator_init(&mem_track, context.allocator)
+    prog_flags, prog_flags_ok := _parse_args()
+    if !prog_flags_ok {
+        _usage()
+        os.exit(1)
     }
-    context.allocator = (track) ? mem.tracking_allocator(&mem_track) : context.allocator
-    defer if track {
+
+    mem_track: mem.Tracking_Allocator
+    context_allocator := context.allocator
+    if prog_flags.track_alloc {
+        mem.tracking_allocator_init(&mem_track, context_allocator)
+        context_allocator = mem.tracking_allocator(&mem_track)
+    }
+    context.allocator = context_allocator
+
+    context.logger = log.create_console_logger()
+
+    ok := start_func()
+    free_all(context.temp_allocator)
+    log.destroy_console_logger(context.logger)
+    if prog_flags.track_alloc {
         fmt.eprint("\033[1;31m")
         if len(mem_track.allocation_map) > 0 {
             fmt.eprintfln("### %v unfreed allocations ###", len(mem_track.allocation_map))
@@ -37,12 +46,53 @@ _entry :: proc(start_func: proc() -> bool) {
         fmt.eprint("\033[0m")
         mem.tracking_allocator_destroy(&mem_track)
     }
+    os.exit(!ok)
+}
 
-    if !start_func() {
-        os.exit(1)
-    } else {
-        os.exit(0)
+_usage :: proc() {
+    fmt.println("./build [options]...")
+    fmt.println()
+    fmt.println("Options:")
+    fmt.println("    --help             Show this help")
+    fmt.println("    --track-alloc      Track for unfreed and double freed memory")
+}
+
+_Prog_Flags :: struct {
+    track_alloc: bool,
+}
+
+_parse_args :: proc() -> (flags: _Prog_Flags, ok: bool) {
+    next_arg :: proc(args: ^[]string) -> (arg: string, ok: bool) {
+        if len(args) <= 0 {
+            return
+        }
+        arg = args^[0]
+        args^ = args^[1:]
+        return arg, true
     }
+
+    prog_flags: _Prog_Flags
+
+    args := os.args
+    _ = next_arg(&args) or_return
+
+    for {
+        arg, arg_ok := next_arg(&args)
+        if !arg_ok {
+            break
+        }
+
+        switch arg {
+        case "--help":
+            return
+        case "--track-alloc":
+            prog_flags.track_alloc = true
+        case:
+            return
+        }
+    }
+
+    return prog_flags, true
 }
 
 when ODIN_OS == .Linux {
@@ -122,6 +172,7 @@ when ODIN_OS == .Linux {
         duration: time.Duration,
     }
 
+    // TODO: add option capture stdout and stderr or silence the command
     run_cmd_async :: proc(
         cmd: []string,
         location := #caller_location,
