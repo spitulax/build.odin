@@ -1,34 +1,34 @@
 package tests
 
-import src ".."
+import build "../build.odin"
 import "core:log"
 
 capture_start :: proc() -> (ok: bool) {
-    result1 := src.run_cmd_sync(
+    result1 := build.run_cmd_sync(
         {"sh", "-c", "echo 'HELLO, STDOUT!' > /dev/stdout"},
         .Capture,
     ) or_return
-    defer src.process_result_destroy(&result1)
+    defer build.process_result_destroy(&result1)
     if !(result1.stdout == "HELLO, STDOUT!\n" && result1.stderr == "") {
         log.errorf("Unexpected output:\n%#v", result1)
         return false
     }
 
-    result2 := src.run_cmd_sync(
+    result2 := build.run_cmd_sync(
         {"sh", "-c", "echo 'HELLO, STDERR!' > /dev/stderr"},
         .Capture,
     ) or_return
-    defer src.process_result_destroy(&result2)
+    defer build.process_result_destroy(&result2)
     if !(result2.stderr == "HELLO, STDERR!\n" && result2.stdout == "") {
         log.errorf("Unexpected output:\n%#v", result2)
         return false
     }
 
-    result3 := src.run_cmd_sync(
+    result3 := build.run_cmd_sync(
         {"sh", "-c", "echo 'HELLO, STDOUT!' > /dev/stdout; echo 'HELLO, STDERR!' > /dev/stderr"},
         .Capture,
     ) or_return
-    defer src.process_result_destroy(&result3)
+    defer build.process_result_destroy(&result3)
     if !(result3.stderr == "HELLO, STDERR!\n" && result3.stdout == "HELLO, STDOUT!\n") {
         log.errorf("Unexpected output:\n%#v", result3)
         return false
@@ -38,6 +38,6 @@ capture_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    src.run(capture_start)
+    build.run(capture_start)
 }
 
