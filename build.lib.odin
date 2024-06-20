@@ -10,10 +10,14 @@ import "core:strings"
 import "core:sys/linux"
 import "core:time"
 
-_entry :: proc(start_func: proc() -> bool) {
-    prog_flags, prog_flags_ok := _parse_args()
-    if !prog_flags_ok {
-        _usage()
+// (hopefully) unique exit code that indicates that a child process
+// exited before being taken over by execve or execve returns error
+EXIT_BEFORE_EXEC :: 240
+
+run :: proc(start_func: proc() -> bool) {
+    prog_flags: Prog_Flags
+    if !parse_args(&prog_flags) {
+        usage()
         os.exit(1)
     }
 
@@ -28,6 +32,7 @@ _entry :: proc(start_func: proc() -> bool) {
     context.logger = log.create_console_logger()
 
     ok := start_func()
+
     free_all(context.temp_allocator)
     log.destroy_console_logger(context.logger)
     if prog_flags.track_alloc {
@@ -50,19 +55,21 @@ _entry :: proc(start_func: proc() -> bool) {
     os.exit(!ok)
 }
 
-_usage :: proc() {
+@(private = "file")
+usage :: proc() {
     fmt.println("./build [options]...")
     fmt.println()
     fmt.println("Options:")
-    fmt.println("    --help             Show this help")
     fmt.println("    --track-alloc      Track for unfreed and double freed memory")
 }
 
-_Prog_Flags :: struct {
+@(private = "file")
+Prog_Flags :: struct {
     track_alloc: bool,
 }
 
-_parse_args :: proc() -> (flags: _Prog_Flags, ok: bool) {
+@(private = "file")
+parse_args :: proc(prog_flags: ^Prog_Flags) -> (ok: bool) {
     next_arg :: proc(args: ^[]string) -> (arg: string, ok: bool) {
         if len(args) <= 0 {
             return
@@ -71,8 +78,6 @@ _parse_args :: proc() -> (flags: _Prog_Flags, ok: bool) {
         args^ = args^[1:]
         return arg, true
     }
-
-    prog_flags: _Prog_Flags
 
     args := os.args
     _ = next_arg(&args) or_return
@@ -84,8 +89,6 @@ _parse_args :: proc() -> (flags: _Prog_Flags, ok: bool) {
         }
 
         switch arg {
-        case "--help":
-            return
         case "--track-alloc":
             prog_flags.track_alloc = true
         case:
@@ -93,7 +96,7 @@ _parse_args :: proc() -> (flags: _Prog_Flags, ok: bool) {
         }
     }
 
-    return prog_flags, true
+    return true
 }
 
 when ODIN_OS == .Linux {
@@ -107,8 +110,8 @@ when ODIN_OS == .Linux {
     Process :: struct {
         pid:            linux.Pid,
         execution_time: time.Time,
-        stdout_pipe:    Maybe(_Pipe),
-        stderr_pipe:    Maybe(_Pipe),
+        stdout_pipe:    Maybe(Pipe),
+        stderr_pipe:    Maybe(Pipe),
     }
     process_wait :: proc(
         self: Process,
@@ -129,16 +132,29 @@ when ODIN_OS == .Linux {
                 )
                 return
             }
+            result.duration = time.since(self.execution_time)
+
+            if linux.WIFEXITED(status) && linux.WEXITSTATUS(status) == EXIT_BEFORE_EXEC {
+                log.errorf(
+                    "Process %v did not execute the command successfully",
+                    self.pid,
+                    location = location,
+                )
+                return
+            }
 
             if linux.WIFSIGNALED(status) || linux.WIFEXITED(status) {
-                result.duration = time.since(self.execution_time)
-                if stdout_pipe, stdout_pipe_ok := self.stdout_pipe.?; stdout_pipe_ok {
-                    stderr_pipe, stderr_pipe_ok := self.stderr_pipe.?
-                    assert(stderr_pipe_ok)
-                    result.stdout = _pipe_read(&stdout_pipe, location, allocator) or_return
-                    result.stderr = _pipe_read(&stderr_pipe, location, allocator) or_return
-                    _pipe_close_read(&stdout_pipe, location) or_return
-                    _pipe_close_read(&stderr_pipe, location) or_return
+                stdout_pipe, stdout_pipe_ok := self.stdout_pipe.?
+                stderr_pipe, stderr_pipe_ok := self.stderr_pipe.?
+                if stdout_pipe_ok || stderr_pipe_ok {
+                    assert(
+                        stderr_pipe_ok == stdout_pipe_ok,
+                        "stdout and stderr pipe isn't equally initialized",
+                    )
+                    result.stdout = pipe_read(&stdout_pipe, location, allocator) or_return
+                    result.stderr = pipe_read(&stderr_pipe, location, allocator) or_return
+                    pipe_close_read(&stdout_pipe, location) or_return
+                    pipe_close_read(&stderr_pipe, location) or_return
                 }
             }
 
@@ -211,7 +227,7 @@ when ODIN_OS == .Linux {
             return
         }
 
-        stdout_pipe, stderr_pipe: _Pipe
+        stdout_pipe, stderr_pipe: Pipe
         dev_null: linux.Fd
         switch option {
         case .Share:
@@ -219,10 +235,10 @@ when ODIN_OS == .Linux {
         case .Silent:
             errno: linux.Errno
             dev_null, errno = linux.open("/dev/null", {.WRONLY, .CREAT}, {.IWUSR, .IWGRP, .IWOTH})
-            assert(errno == .NONE)
+            assert(errno == .NONE, "could not open /dev/null")
         case .Capture:
-            _pipe_init(&stdout_pipe, location)
-            _pipe_init(&stderr_pipe, location)
+            pipe_init(&stdout_pipe, location) or_return
+            pipe_init(&stderr_pipe, location) or_return
         }
 
         argv := make([dynamic]cstring, 0, len(cmd) + 2)
@@ -247,42 +263,59 @@ when ODIN_OS == .Linux {
             case .Share:
                 break
             case .Silent:
-                _fd_redirect(&dev_null, linux.Fd(os.stdout), location)
-                _fd_redirect(&dev_null, linux.Fd(os.stderr), location)
-                assert(linux.close(dev_null) == .NONE)
+                if !fd_redirect(
+                    &dev_null,
+                    linux.Fd(os.stdout),
+                    location,
+                ) {linux.exit(EXIT_BEFORE_EXEC)}
+                if !fd_redirect(
+                    &dev_null,
+                    linux.Fd(os.stderr),
+                    location,
+                ) {linux.exit(EXIT_BEFORE_EXEC)}
+                assert(linux.close(dev_null) == .NONE, "could not close /dev/null")
             case .Capture:
-                _pipe_close_read(&stdout_pipe, location) or_return
-                _pipe_close_read(&stderr_pipe, location) or_return
-                _pipe_redirect(&stdout_pipe, linux.Fd(os.stdout), location)
-                _pipe_redirect(&stderr_pipe, linux.Fd(os.stderr), location)
-                _pipe_close_write(&stdout_pipe, location) or_return
-                _pipe_close_write(&stderr_pipe, location) or_return
+                if !pipe_close_read(&stdout_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
+                if !pipe_close_read(&stderr_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
+                if !pipe_redirect(
+                    &stdout_pipe,
+                    linux.Fd(os.stdout),
+                    location,
+                ) {linux.exit(EXIT_BEFORE_EXEC)}
+                if !pipe_redirect(
+                    &stderr_pipe,
+                    linux.Fd(os.stderr),
+                    location,
+                ) {linux.exit(EXIT_BEFORE_EXEC)}
+                if !pipe_close_write(&stdout_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
+                if !pipe_close_write(&stderr_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
             }
-            if errno := linux.execve(argv[0], raw_data(argv), _environ()); errno != .NONE {
+
+            if errno := linux.execve(argv[0], raw_data(argv), environ()); errno != .NONE {
                 log.errorf(
                     "Failed to run `%s`: %s",
                     cmd,
                     libc.strerror(i32(errno)),
                     location = location,
                 )
-                linux.exit(1)
+                linux.exit(EXIT_BEFORE_EXEC)
             }
             unreachable()
         }
         execution_time := time.now()
 
         if (option == .Silent) {
-            assert(linux.close(dev_null) == .NONE)
+            assert(linux.close(dev_null) == .NONE, "could not close /dev/null")
         }
 
         delete(argv)
-        stdout_pipe_: Maybe(_Pipe) = (option == .Capture) ? stdout_pipe : nil
-        stderr_pipe_: Maybe(_Pipe) = (option == .Capture) ? stderr_pipe : nil
+        maybe_stdout_pipe: Maybe(Pipe) = (option == .Capture) ? stdout_pipe : nil
+        maybe_stderr_pipe: Maybe(Pipe) = (option == .Capture) ? stderr_pipe : nil
         return {
                 pid = child_pid,
                 execution_time = execution_time,
-                stdout_pipe = stdout_pipe_,
-                stderr_pipe = stderr_pipe_,
+                stdout_pipe = maybe_stdout_pipe,
+                stderr_pipe = maybe_stderr_pipe,
             },
             true
     }
@@ -300,13 +333,14 @@ when ODIN_OS == .Linux {
         return process_wait(process, allocator, location)
     }
 
-
-    _Pipe :: struct {
+    @(private = "file")
+    Pipe :: struct {
         _both: [2]linux.Fd,
         read:  linux.Fd,
         write: linux.Fd,
     }
-    _pipe_init :: proc(self: ^_Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+    @(private = "file")
+    pipe_init :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
         if errno := linux.pipe2(&self._both, {.CLOEXEC}); errno != .NONE {
             log.errorf(
                 "Failed to create pipes: %s",
@@ -319,7 +353,8 @@ when ODIN_OS == .Linux {
         self.write = self._both[1]
         return true
     }
-    _pipe_close_read :: proc(self: ^_Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+    @(private = "file")
+    pipe_close_read :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
         if errno := linux.close(self.read); errno != .NONE {
             log.errorf(
                 "Failed to close read pipe: %s",
@@ -330,7 +365,8 @@ when ODIN_OS == .Linux {
         }
         return true
     }
-    _pipe_close_write :: proc(self: ^_Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+    @(private = "file")
+    pipe_close_write :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
         if errno := linux.close(self.write); errno != .NONE {
             log.errorf(
                 "Failed to close write pipe: %s",
@@ -341,8 +377,9 @@ when ODIN_OS == .Linux {
         }
         return true
     }
-    _pipe_redirect :: proc(
-        self: ^_Pipe,
+    @(private = "file")
+    pipe_redirect :: proc(
+        self: ^Pipe,
         newfd: linux.Fd,
         location: runtime.Source_Code_Location,
     ) -> (
@@ -360,8 +397,9 @@ when ODIN_OS == .Linux {
         }
         return true
     }
-    _pipe_read :: proc(
-        self: ^_Pipe,
+    @(private = "file")
+    pipe_read :: proc(
+        self: ^Pipe,
         location: runtime.Source_Code_Location,
         allocator := context.allocator,
     ) -> (
@@ -369,7 +407,7 @@ when ODIN_OS == .Linux {
         ok: bool,
     ) {
         INITIAL_BUF_SIZE :: 1024
-        _pipe_close_write(self, location) or_return
+        pipe_close_write(self, location) or_return
         total_bytes_read := 0
         buf := make([dynamic]u8, INITIAL_BUF_SIZE)
         defer delete(buf)
@@ -396,7 +434,8 @@ when ODIN_OS == .Linux {
         return
     }
 
-    _fd_redirect :: proc(
+    @(private = "file")
+    fd_redirect :: proc(
         fd: ^linux.Fd,
         newfd: linux.Fd,
         location: runtime.Source_Code_Location,
@@ -416,7 +455,8 @@ when ODIN_OS == .Linux {
         return true
     }
 
-    _environ :: proc() -> [^]cstring #no_bounds_check {
+    @(private = "file")
+    environ :: proc() -> [^]cstring #no_bounds_check {
         env: [^]cstring = &runtime.args__[len(runtime.args__)]
         assert(env[0] == nil)
         return &env[1]

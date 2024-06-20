@@ -11,12 +11,12 @@ cmd_async_start :: proc() -> (ok: bool) {
         process = src.run_cmd_async({"sh", "-c", "echo 'HELLO, WORLD!'"}, .Silent) or_return
     }
     results := src.process_wait_many(processes[:], context.temp_allocator) or_return
-    _ = results
+    defer src.process_result_destroy_many(results[:])
     log.infof("Time elapsed: %v", time.since(before))
     return true
 }
 
 main :: proc() {
-    src._entry(cmd_async_start)
+    src.run(cmd_async_start)
 }
 

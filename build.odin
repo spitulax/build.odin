@@ -5,6 +5,6 @@ start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    _entry(start)
+    run(start)
 }
 

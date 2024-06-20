@@ -38,6 +38,6 @@ capture_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    src._entry(capture_start)
+    src.run(capture_start)
 }
 
