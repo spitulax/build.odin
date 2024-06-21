@@ -1,9 +1,14 @@
 package build
 
+import "base:runtime"
 import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:os"
+
+OS_Set :: bit_set[runtime.Odin_OS_Type]
+SUPPORTED_OS :: OS_Set{.Linux}
+#assert(ODIN_OS in SUPPORTED_OS)
 
 run :: proc(start_func: proc() -> bool) {
     prog_flags: Prog_Flags
@@ -59,8 +64,9 @@ Prog_Flags :: struct {
     track_alloc: bool,
 }
 
-@(private = "file")
+@(private = "file", require_results)
 parse_args :: proc(prog_flags: ^Prog_Flags) -> (ok: bool) {
+    @(require_results)
     next_arg :: proc(args: ^[]string) -> (arg: string, ok: bool) {
         if len(args) <= 0 {
             return

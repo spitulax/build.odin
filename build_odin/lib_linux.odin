@@ -10,6 +10,7 @@ import "core:time"
 
 // (hopefully) unique exit code that indicates that a child process
 // exited before being taken over by execve or execve returns error.
+// TODO: instead of this maybe track subprocesses using some sort of global variable?
 @(private = "file")
 EXIT_BEFORE_EXEC :: 240
 
@@ -22,7 +23,8 @@ STDERR_FILENO :: 2
 
 Exit :: distinct u32
 Signal :: distinct linux.Signal
-Process_Exit :: union #no_nil {
+// nil on success
+Process_Exit :: union {
     Exit,
     Signal,
 }
@@ -85,7 +87,8 @@ process_wait :: proc(
         }
 
         if linux.WIFEXITED(status) {
-            result.exit = Exit(linux.WEXITSTATUS(status))
+            exit_code := linux.WEXITSTATUS(status)
+            result.exit = (exit_code == 0) ? nil : Exit(exit_code)
             ok = true
             return
         }
@@ -243,7 +246,7 @@ Pipe :: struct {
     read:  linux.Fd,
     write: linux.Fd,
 }
-@(private = "file")
+@(private = "file", require_results)
 pipe_init :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
     if errno := linux.pipe2(&self._both, {.CLOEXEC}); errno != .NONE {
         log.errorf("Failed to create pipes: %s", libc.strerror(i32(errno)), location = location)
@@ -253,7 +256,7 @@ pipe_init :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: b
     self.write = self._both[1]
     return true
 }
-@(private = "file")
+@(private = "file", require_results)
 pipe_close_read :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
     if errno := linux.close(self.read); errno != .NONE {
         log.errorf("Failed to close read pipe: %s", libc.strerror(i32(errno)), location = location)
@@ -261,7 +264,7 @@ pipe_close_read :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> 
     }
     return true
 }
-@(private = "file")
+@(private = "file", require_results)
 pipe_close_write :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
     if errno := linux.close(self.write); errno != .NONE {
         log.errorf(
@@ -273,7 +276,7 @@ pipe_close_write :: proc(self: ^Pipe, location: runtime.Source_Code_Location) ->
     }
     return true
 }
-@(private = "file")
+@(private = "file", require_results)
 pipe_redirect :: proc(
     self: ^Pipe,
     newfd: linux.Fd,
@@ -293,7 +296,7 @@ pipe_redirect :: proc(
     }
     return true
 }
-@(private = "file")
+@(private = "file", require_results)
 pipe_read :: proc(
     self: ^Pipe,
     location: runtime.Source_Code_Location,
@@ -326,7 +329,7 @@ pipe_read :: proc(
     return
 }
 
-@(private = "file")
+@(private = "file", require_results)
 fd_redirect :: proc(
     fd: ^linux.Fd,
     newfd: linux.Fd,
