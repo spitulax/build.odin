@@ -52,7 +52,7 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    lib_files = subprocess.run(['sh', '-c', 'find ../build.odin -type f -name \'*.odin\''], capture_output=True).stdout.decode('utf-8').splitlines()
+    lib_files = subprocess.run(['sh', '-c', 'find ../build_odin -type f -name \'*.odin\''], capture_output=True).stdout.decode('utf-8').splitlines()
     lib_modified = 0
     for lib in lib_files:
         proc = subprocess.run(['sh', '-c', f'stat --format="%Y" {lib}'], capture_output=True)
@@ -69,31 +69,31 @@ if __name__ == '__main__':
         if os.path.isfile(test_bin):
             bin_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {test_bin}'], capture_output=True).stdout)
         if force or src_modified > bin_modified or lib_modified > bin_modified:
-            print('\033[1;38m', end='')
+            print('\033[1;38m', end='', flush=True)
             print(f'Building {test}...')
-            print('\033[0m', end='')
+            print('\033[0m', end='', flush=True)
             if subprocess.run(['sh', '-c', f'odin build {test_src} -file -out:{test_bin} -vet -disallow-do -warnings-as-errors -debug -target:linux_amd64']).returncode != 0:
-                print('\033[1;31m', end='')
+                print('\033[1;31m', end='', flush=True)
                 print('Build failed.')
-                print('\033[0m', end='')
+                print('\033[0m', end='', flush=True)
                 exit(1)
 
     if not dont_run:
         print()
         for test in tests:
             test_bin = 'bin/' + test
-            print('\033[1;34m', end='')
+            print('\033[1;34m', end='', flush=True)
             print('~~~~~~~~~~~~~~~~~~~~')
             print(f'Running {test}...')
-            print('\033[0m', end='')
+            print('\033[0m', end='', flush=True)
             if subprocess.run(['sh', '-c', f'./{test_bin} --track-alloc']).returncode == 0:
-                print('\033[1;32m', end='')
+                print('\033[1;32m', end='', flush=True)
                 print(f'{test} passed')
                 print('~~~~~~~~~~~~~~~~~~~~')
-                print('\033[0m', end='')
+                print('\033[0m', end='', flush=True)
             else:
-                print('\033[1;31m', end='')
+                print('\033[1;31m', end='', flush=True)
                 print(f'{test} failed')
                 print('~~~~~~~~~~~~~~~~~~~~')
-                print('\033[0m', end='')
+                print('\033[0m', end='', flush=True)
             print()

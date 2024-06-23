@@ -1,6 +1,6 @@
 package tests
 
-import build "../build.odin"
+import build "../build_odin"
 import "core:log"
 import "core:time"
 

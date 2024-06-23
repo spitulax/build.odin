@@ -23,7 +23,6 @@ STDERR_FILENO :: 2
 
 Exit :: distinct u32
 Signal :: distinct linux.Signal
-// nil on success
 Process_Exit :: union {
     Exit,
     Signal,
@@ -116,21 +115,22 @@ process_wait_many :: proc(
 }
 
 Process_Result :: struct {
-    exit:     Process_Exit,
+    exit:     Process_Exit, // nil on success
     duration: time.Duration,
     stdout:   string, // both are empty if run_cmd_* is not capturing
     stderr:   string,
 }
-process_result_destroy :: proc(self: ^Process_Result) {
-    delete(self.stdout)
-    delete(self.stderr)
+process_result_destroy :: proc(self: ^Process_Result, location := #caller_location) {
+    delete(self.stdout, loc = location)
+    delete(self.stderr, loc = location)
 }
-process_result_destroy_many :: proc(selves: []Process_Result) {
+process_result_destroy_many :: proc(selves: []Process_Result, location := #caller_location) {
     for &result in selves {
-        process_result_destroy(&result)
+        process_result_destroy(&result, location)
     }
 }
 
+// FIXME: *some* programs that read from stdin may hang if called with .Silent or .Capture
 Run_Cmd_Option :: enum {
     Share,
     Silent,
@@ -151,15 +151,9 @@ run_cmd_async :: proc(
     }
 
     stdout_pipe, stderr_pipe: Pipe
-    dev_null: linux.Fd
-    switch option {
-    case .Share:
-        break
-    case .Silent:
-        errno: linux.Errno
-        dev_null, errno = linux.open("/dev/null", {.WRONLY, .CREAT}, {.IWUSR, .IWGRP, .IWOTH})
-        assert(errno == .NONE, "could not open /dev/null")
-    case .Capture:
+    dev_null, dev_null_errno := linux.open("/dev/null", {.RDWR, .CREAT}, {.IWUSR, .IWGRP, .IWOTH})
+    assert(dev_null_errno == .NONE, "could not open /dev/null")
+    if option == .Capture {
         pipe_init(&stdout_pipe, location) or_return
         pipe_init(&stderr_pipe, location) or_return
     }
@@ -182,20 +176,52 @@ run_cmd_async :: proc(
     }
 
     if child_pid == 0 {
+        fail :: proc() {
+            linux.exit(EXIT_BEFORE_EXEC)
+        }
+
+        // TODO: fix logging from child processes. Maybe using the global variable solution
+        // explained in the definition of `EXIT_BEFORE_EXEC`?
+
+        // because of .Silent and .Capture shenanigans, any log here is written into file instead
+        //logger := context.logger
+        //if option == .Share || option == .Capture {
+        //    logfile, errno := os.open(
+        //        "build_odin-log.txt",
+        //        os.O_RDWR | os.O_CREATE | os.O_APPEND,
+        //        0o644,
+        //    )
+        //    if errno != os.ERROR_NONE {
+        //        log.errorf(
+        //            "Failed to create log file: %s",
+        //            libc.strerror(i32(errno)),
+        //            location = location,
+        //        )
+        //        fail()
+        //    }
+        //    logger = log.create_file_logger(logfile)
+        //}
+        //context.logger = logger
+
         switch option {
         case .Share:
-            break
+            if !fd_close(dev_null, location) {fail()}
         case .Silent:
-            if !fd_redirect(&dev_null, STDOUT_FILENO, location) {linux.exit(EXIT_BEFORE_EXEC)}
-            if !fd_redirect(&dev_null, STDERR_FILENO, location) {linux.exit(EXIT_BEFORE_EXEC)}
-            assert(linux.close(dev_null) == .NONE, "could not close /dev/null")
+            if !fd_redirect(dev_null, STDOUT_FILENO, location) {fail()}
+            if !fd_redirect(dev_null, STDERR_FILENO, location) {fail()}
+            if !fd_redirect(dev_null, STDIN_FILENO, location) {fail()}
+            if !fd_close(dev_null, location) {fail()}
         case .Capture:
-            if !pipe_close_read(&stdout_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
-            if !pipe_close_read(&stderr_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
-            if !pipe_redirect(&stdout_pipe, STDOUT_FILENO, location) {linux.exit(EXIT_BEFORE_EXEC)}
-            if !pipe_redirect(&stderr_pipe, STDERR_FILENO, location) {linux.exit(EXIT_BEFORE_EXEC)}
-            if !pipe_close_write(&stdout_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
-            if !pipe_close_write(&stderr_pipe, location) {linux.exit(EXIT_BEFORE_EXEC)}
+            if !pipe_close_read(&stdout_pipe, location) {fail()}
+            if !pipe_close_read(&stderr_pipe, location) {fail()}
+
+            if !pipe_redirect(&stdout_pipe, STDOUT_FILENO, location) {fail()}
+            if !pipe_redirect(&stderr_pipe, STDERR_FILENO, location) {fail()}
+            if !fd_redirect(dev_null, STDIN_FILENO, location) {fail()}
+
+            if !pipe_close_write(&stdout_pipe, location) {fail()}
+            if !pipe_close_write(&stderr_pipe, location) {fail()}
+            if !fd_close(dev_null, location) {fail()}
         }
 
         if errno := linux.execve(argv[0], raw_data(argv), environ()); errno != .NONE {
@@ -205,17 +231,15 @@ run_cmd_async :: proc(
                 libc.strerror(i32(errno)),
                 location = location,
             )
-            linux.exit(EXIT_BEFORE_EXEC)
+            fail()
         }
         unreachable()
     }
     execution_time := time.now()
 
-    if (option == .Silent) {
-        assert(linux.close(dev_null) == .NONE, "could not close /dev/null")
-    }
+    fd_close(dev_null, location) or_return
 
-    delete(argv)
+    delete(argv, loc = location)
     maybe_stdout_pipe: Maybe(Pipe) = (option == .Capture) ? stdout_pipe : nil
     maybe_stderr_pipe: Maybe(Pipe) = (option == .Capture) ? stderr_pipe : nil
     return {
@@ -309,7 +333,7 @@ pipe_read :: proc(
     pipe_close_write(self, location) or_return
     total_bytes_read := 0
     buf := make([dynamic]u8, INITIAL_BUF_SIZE)
-    defer delete(buf)
+    defer delete(buf, loc = location)
     for {
         bytes_read, errno := linux.read(self.read, buf[total_bytes_read:])
         if bytes_read <= 0 {
@@ -331,13 +355,13 @@ pipe_read :: proc(
 
 @(private = "file", require_results)
 fd_redirect :: proc(
-    fd: ^linux.Fd,
+    fd: linux.Fd,
     newfd: linux.Fd,
     location: runtime.Source_Code_Location,
 ) -> (
     ok: bool,
 ) {
-    if _, errno := linux.dup2(fd^, newfd); errno != .NONE {
+    if _, errno := linux.dup2(fd, newfd); errno != .NONE {
         log.errorf(
             "Failed to redirect oldfd: %v, newfd: %v: %s",
             fd,
@@ -345,6 +369,14 @@ fd_redirect :: proc(
             libc.strerror(i32(errno)),
             location = location,
         )
+        return false
+    }
+    return true
+}
+@(private = "file", require_results)
+fd_close :: proc(fd: linux.Fd, location: runtime.Source_Code_Location) -> (ok: bool) {
+    if errno := linux.close(fd); errno != .NONE {
+        log.errorf("Failed to close fd %v: %s", fd, libc.strerror(i32(errno)), location = location)
         return false
     }
     return true

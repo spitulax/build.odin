@@ -3,7 +3,7 @@ package build
 import "core:fmt"
 
 start :: proc() -> (ok: bool) {
-    result := run_cmd_sync({"nvim"}, .Share) or_return
+    result := run_cmd_sync({"nvim"}, .Capture) or_return
     defer process_result_destroy(&result)
     if result.exit == nil {
         fmt.println("took:", result.duration)
