@@ -58,6 +58,7 @@ _process_wait :: proc(
 ) {
     for {
         status: u32
+        early_exit: bool
         if child_pid, errno := linux.waitpid(self.pid, &status, {}, nil); errno != .NONE {
             log.errorf(
                 "Process %v cannot exit: %s",
@@ -65,18 +66,19 @@ _process_wait :: proc(
                 libc.strerror(i32(errno)),
                 location = location,
             )
-            return
+            early_exit = true
         }
         result.duration = time.since(self.execution_time)
 
-        current: Process_Status
+        current: ^Process_Status
         child_appended: bool
         if sync.mutex_guard(g_process_tracker_mutex) {
-            if len(g_process_tracker^) > 0 {
+            if len(g_process_tracker^) <= 0 {
                 child_appended = false
+            } else {
+                current = &g_process_tracker[self.pid]
+                child_appended = true
             }
-            current = g_process_tracker[self.pid]
-            child_appended = true
         }
 
         defer if sync.mutex_guard(g_process_tracker_mutex) {
@@ -84,17 +86,6 @@ _process_wait :: proc(
         }
 
         if linux.WIFSIGNALED(status) || linux.WIFEXITED(status) {
-            has_run := current.has_run && child_appended
-            if !has_run {
-                log.errorf(
-                    "Process %v did not execute the command successfully",
-                    self.pid,
-                    location = location,
-                )
-                log.errorf("Info: %s", strings.to_string(current.log), location = location)
-                return
-            }
-
             stdout_pipe, stdout_pipe_ok := self.stdout_pipe.?
             stderr_pipe, stderr_pipe_ok := self.stderr_pipe.?
             if stdout_pipe_ok || stderr_pipe_ok {
@@ -107,18 +98,35 @@ _process_wait :: proc(
                 pipe_close_read(&stdout_pipe, location) or_return
                 pipe_close_read(&stderr_pipe, location) or_return
             }
+
+            // short-circuit evaluation
+            if !(child_appended && sync.atomic_load(&current.has_run)) {
+                early_exit = true
+                log.errorf(
+                    "Process %v did not execute the command successfully",
+                    self.pid,
+                    location = location,
+                )
+                log_str: string
+                if child_appended {
+                    if sync.mutex_guard(g_process_tracker_mutex) {
+                        log_str = strings.to_string(current.log)
+                    }
+                }
+                log.errorf("Info: %s", log_str if child_appended else "", location = location)
+            }
         }
 
         if linux.WIFSIGNALED(status) {
             result.exit = Signal(linux.WTERMSIG(status))
-            ok = true
+            ok = true && !early_exit
             return
         }
 
         if linux.WIFEXITED(status) {
             exit_code := linux.WEXITSTATUS(status)
             result.exit = (exit_code == 0) ? nil : Exit(exit_code)
-            ok = true
+            ok = true && !early_exit
             return
         }
     }
@@ -243,9 +251,11 @@ _run_cmd_async :: proc(
             if !fd_close(dev_null, location) {fail()}
         }
 
-        current.has_run = true
+        _, exch_ok := sync.atomic_compare_exchange_strong(&current.has_run, false, true)
+        assert(exch_ok)
         if errno := linux.execve(argv[0], raw_data(argv), environ()); errno != .NONE {
-            current.has_run = false
+            _, exch_ok = sync.atomic_compare_exchange_strong(&current.has_run, true, false)
+            assert(exch_ok)
             log.errorf(
                 "Failed to run `%s`: %s",
                 cmd,
