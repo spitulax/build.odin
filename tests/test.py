@@ -52,7 +52,7 @@ if __name__ == '__main__':
     except FileExistsError:
         pass
 
-    lib_files = subprocess.run(['sh', '-c', 'find ../build_odin -type f -name \'*.odin\''], capture_output=True).stdout.decode('utf-8').splitlines()
+    lib_files = subprocess.run(['sh', '-c', 'find ../build_odin/lib -type f -name \'*.odin\''], capture_output=True).stdout.decode('utf-8').splitlines()
     lib_modified = 0
     for lib in lib_files:
         proc = subprocess.run(['sh', '-c', f'stat --format="%Y" {lib}'], capture_output=True)
