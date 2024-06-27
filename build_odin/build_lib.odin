@@ -75,6 +75,12 @@ run :: proc(start_func: Start_Func) {
 }
 
 
+Exit :: _Exit
+Signal :: _Signal
+Process_Exit :: _Process_Exit
+Process_Handle :: _Process_Handle
+
+
 Process :: struct {
     using _impl:    _Process,
     execution_time: time.Time,

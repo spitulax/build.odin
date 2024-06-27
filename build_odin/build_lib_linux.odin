@@ -1,3 +1,4 @@
+//+private
 package build_lib
 
 import "base:runtime"
@@ -13,23 +14,18 @@ import "core:sys/linux"
 import "core:time"
 
 
-@(private = "file")
 STDIN_FILENO :: 0
-@(private = "file")
 STDOUT_FILENO :: 1
-@(private = "file")
 STDERR_FILENO :: 2
 
 
-@(private = "file")
-Exit :: distinct u32
-@(private = "file")
-Signal :: distinct linux.Signal
-Process_Exit :: union {
+_Exit :: distinct u32
+_Signal :: distinct linux.Signal
+_Process_Exit :: union {
     Exit,
     Signal,
 }
-Process_Handle :: linux.Pid
+_Process_Handle :: linux.Pid
 
 
 _Process :: struct {
@@ -293,7 +289,6 @@ _run_cmd_async :: proc(
 }
 
 
-@(private)
 _process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, ok: bool) {
     PROCESS_TRACKER_SIZE :: 1 * mem.Megabyte
 
@@ -341,7 +336,6 @@ _process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, o
     return shared_mem, PROCESS_TRACKER_SIZE, true
 }
 
-@(private)
 _process_tracker_destroy :: proc(shared_mem: rawptr, size: uint) -> (ok: bool) {
     if shared_mem != nil {
         if errno := linux.munmap(shared_mem, size); errno != .NONE {
@@ -353,14 +347,13 @@ _process_tracker_destroy :: proc(shared_mem: rawptr, size: uint) -> (ok: bool) {
 }
 
 
-@(private = "file")
 Pipe :: struct {
     _both: [2]linux.Fd,
     read:  linux.Fd,
     write: linux.Fd,
 }
 
-@(private = "file", require_results)
+@(require_results)
 pipe_init :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
     if errno := linux.pipe2(&self._both, {.CLOEXEC}); errno != .NONE {
         log.errorf("Failed to create pipes: %s", libc.strerror(i32(errno)), location = location)
@@ -371,7 +364,7 @@ pipe_init :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: b
     return true
 }
 
-@(private = "file", require_results)
+@(require_results)
 pipe_close_read :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
     if errno := linux.close(self.read); errno != .NONE {
         log.errorf("Failed to close read pipe: %s", libc.strerror(i32(errno)), location = location)
@@ -380,7 +373,7 @@ pipe_close_read :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> 
     return true
 }
 
-@(private = "file", require_results)
+@(require_results)
 pipe_close_write :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
     if errno := linux.close(self.write); errno != .NONE {
         log.errorf(
@@ -393,7 +386,7 @@ pipe_close_write :: proc(self: ^Pipe, location: runtime.Source_Code_Location) ->
     return true
 }
 
-@(private = "file", require_results)
+@(require_results)
 pipe_redirect :: proc(
     self: ^Pipe,
     newfd: linux.Fd,
@@ -414,7 +407,7 @@ pipe_redirect :: proc(
     return true
 }
 
-@(private = "file", require_results)
+@(require_results)
 pipe_read :: proc(
     self: ^Pipe,
     location: runtime.Source_Code_Location,
@@ -448,7 +441,7 @@ pipe_read :: proc(
     return
 }
 
-@(private = "file", require_results)
+@(require_results)
 fd_redirect :: proc(
     fd: linux.Fd,
     newfd: linux.Fd,
@@ -469,7 +462,7 @@ fd_redirect :: proc(
     return true
 }
 
-@(private = "file", require_results)
+@(require_results)
 fd_close :: proc(fd: linux.Fd, location: runtime.Source_Code_Location) -> (ok: bool) {
     if errno := linux.close(fd); errno != .NONE {
         log.errorf("Failed to close fd %v: %s", fd, libc.strerror(i32(errno)), location = location)
@@ -478,7 +471,6 @@ fd_close :: proc(fd: linux.Fd, location: runtime.Source_Code_Location) -> (ok: b
     return true
 }
 
-@(private = "file")
 environ :: proc() -> [^]cstring #no_bounds_check {
     env: [^]cstring = &runtime.args__[len(runtime.args__)]
     assert(env[0] == nil)

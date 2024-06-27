@@ -65,12 +65,10 @@ if __name__ == '__main__':
             print(f'{test_src} does not exist in {os.getcwd()}')
             exit(1)
         src_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {test_src}'], capture_output=True).stdout)
-        script_path = os.getcwd() + '/' + os.path.basename(sys.argv[0])
-        script_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {script_path}'], capture_output=True).stdout)
         bin_modified = 0
         if os.path.isfile(test_bin):
             bin_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {test_bin}'], capture_output=True).stdout)
-        if force or src_modified > bin_modified or lib_modified > bin_modified or script_modified > bin_modified:
+        if force or src_modified > bin_modified or lib_modified > bin_modified:
             print('\033[1;38m', end='', flush=True)
             print(f'Building {test}...')
             print('\033[0m', end='', flush=True)
@@ -81,6 +79,7 @@ if __name__ == '__main__':
                 exit(1)
 
     if not dont_run:
+        failed = 0
         print()
         for test in tests:
             test_bin = 'bin/' + test
@@ -98,4 +97,13 @@ if __name__ == '__main__':
                 print(f'{test} failed')
                 print('~~~~~~~~~~~~~~~~~~~~')
                 print('\033[0m', end='', flush=True)
+                failed = failed + 1
             print()
+        if failed > 0:
+            print('\033[1;31m', end='', flush=True)
+            print(f"{failed} tests failed")
+            print('\033[0m', end='', flush=True)
+        else:
+            print('\033[1;32m', end='', flush=True)
+            print("OK")
+            print('\033[0m', end='', flush=True)
