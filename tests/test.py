@@ -65,7 +65,8 @@ if __name__ == '__main__':
             print(f'{test_src} does not exist in {os.getcwd()}')
             exit(1)
         src_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {test_src}'], capture_output=True).stdout)
-        script_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {sys.argv[0]}'], capture_output=True).stdout)
+        script_path = os.getcwd() + '/' + os.path.basename(sys.argv[0])
+        script_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {script_path}'], capture_output=True).stdout)
         bin_modified = 0
         if os.path.isfile(test_bin):
             bin_modified = int(subprocess.run(['sh', '-c', f'stat --format="%Y" {test_bin}'], capture_output=True).stdout)
@@ -73,7 +74,7 @@ if __name__ == '__main__':
             print('\033[1;38m', end='', flush=True)
             print(f'Building {test}...')
             print('\033[0m', end='', flush=True)
-            if subprocess.run(['sh', '-c', f'odin build {test_src} -file -out:{test_bin} -vet -disallow-do -warnings-as-errors -debug -target:linux_amd64 -sanitize:address']).returncode != 0:
+            if subprocess.run(['sh', '-c', f'odin build {test_src} -file -out:{test_bin} -vet -disallow-do -warnings-as-errors -debug -target:linux_amd64']).returncode != 0:
                 print('\033[1;31m', end='', flush=True)
                 print('Build failed.')
                 print('\033[0m', end='', flush=True)

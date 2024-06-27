@@ -12,12 +12,6 @@ import "core:sync"
 import "core:sys/linux"
 import "core:time"
 
-// (hopefully) unique exit code that indicates that a child process
-// exited before being taken over by execve or execve returns error.
-// TODO: instead of this maybe track subprocesses using some sort of global variable?
-@(private = "file")
-EXIT_BEFORE_EXEC :: 240
-
 
 @(private = "file")
 STDIN_FILENO :: 0
@@ -99,21 +93,25 @@ _process_wait :: proc(
                 pipe_close_read(&stderr_pipe, location) or_return
             }
 
-            // short-circuit evaluation
-            if !(child_appended && sync.atomic_load(&current.has_run)) {
+            log_str: Maybe(string)
+            if !(child_appended && sync.atomic_load(&current.has_run)) {     // short-circuit evaluation
                 early_exit = true
                 log.errorf(
                     "Process %v did not execute the command successfully",
                     self.pid,
                     location = location,
                 )
-                log_str: string
-                if child_appended {
-                    if sync.mutex_guard(g_process_tracker_mutex) {
-                        log_str = strings.to_string(current.log)
+            }
+            if child_appended {
+                if sync.mutex_guard(g_process_tracker_mutex) {
+                    log_str = strings.to_string(current.log)
+                    if len(log_str.?) <= 0 {
+                        log_str = nil
                     }
                 }
-                log.errorf("Info: %s", log_str if child_appended else "", location = location)
+            }
+            if log_str != nil {
+                log.infof("Log from %v:\n%s", self.pid, log_str.?, location = location)
             }
         }
 
@@ -219,16 +217,26 @@ _run_cmd_async :: proc(
 
         pid := linux.getpid()
         status := Process_Status{}
-        _, builder_err := strings.builder_init_none(&status.log, g_shared_mem_allocator)
+        _, builder_err := strings.builder_init_len_cap(
+            &status.log,
+            0,
+            1024,
+            g_shared_mem_allocator,
+        )
         assert(builder_err == .None)
         current: ^Process_Status
+        logger := context.logger
         if sync.mutex_guard(g_process_tracker_mutex) {
             assert(g_process_tracker != nil || g_process_tracker_mutex != nil)
             g_process_tracker[pid] = status
             current = &g_process_tracker[pid]
+            logger = create_builder_logger(
+                &current.log,
+                g_shared_mem_allocator,
+                g_process_tracker_mutex,
+            )
         }
-
-        // TODO: fix logging from child processes. Create a logger that appends to Process_Status.log
+        context.logger = logger
 
         switch option {
         case .Share:
@@ -286,7 +294,7 @@ _run_cmd_async :: proc(
 
 
 @(private)
-process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, ok: bool) {
+_process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, ok: bool) {
     PROCESS_TRACKER_SIZE :: 1 * mem.Megabyte
 
     mem_errno: linux.Errno
@@ -334,7 +342,7 @@ process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, ok
 }
 
 @(private)
-process_tracker_destroy :: proc(shared_mem: rawptr, size: uint) -> (ok: bool) {
+_process_tracker_destroy :: proc(shared_mem: rawptr, size: uint) -> (ok: bool) {
     if shared_mem != nil {
         if errno := linux.munmap(shared_mem, size); errno != .NONE {
             log.errorf("Failed to unmap shared memory: %s", libc.strerror(i32(errno)))
