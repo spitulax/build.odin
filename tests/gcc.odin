@@ -1,23 +1,23 @@
 package tests
 
-import "../build_odin/lib"
+import build "../build_odin"
 import "core:log"
 import "core:strconv"
 
 gcc_start :: proc() -> (ok: bool) {
-    result := lib.run_cmd_sync(
+    result := build.run_cmd_sync(
         {"cc", "-o", "./rats/gcc/main", "./rats/gcc/main.c"},
         .Capture,
     ) or_return
-    defer lib.process_result_destroy(&result)
+    defer build.process_result_destroy(&result)
     if result.exit != nil {
         log.errorf("gcc exited with %v: %s", result.exit, result.stderr)
         return false
     }
     // TODO: specify environment variable
     // eg. adding ./rats/gcc/main to PATH for this operation to call it without sh
-    result2 := lib.run_cmd_sync({"sh", "-c", "./rats/gcc/main"}, .Capture) or_return
-    defer lib.process_result_destroy(&result2)
+    result2 := build.run_cmd_sync({"sh", "-c", "./rats/gcc/main"}, .Capture) or_return
+    defer build.process_result_destroy(&result2)
     if result2.exit != nil {
         log.errorf("sh exited with %v: %s", result2.exit, result2.stderr)
         return false
@@ -35,6 +35,6 @@ gcc_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    lib.run(gcc_start)
+    build.run(gcc_start)
 }
 
