@@ -1,6 +1,6 @@
 package build
 
-import build "build_odin"
+import b "build_odin"
 import "core:log"
 
 start :: proc() -> (ok: bool) {
@@ -9,6 +9,6 @@ start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    build.run(start)
+    b.run(start)
 }
 

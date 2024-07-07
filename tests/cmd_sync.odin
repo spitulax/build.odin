@@ -1,16 +1,16 @@
 package tests
 
-import build "../build_odin"
+import b "../build_odin"
 import "core:log"
 import "core:time"
 import "utils"
 
 cmd_sync_start :: proc() -> (ok: bool) {
     before := time.now()
-    results: [10]build.Process_Result
-    defer build.process_result_destroy_many(results[:])
+    results: [10]b.Process_Result
+    defer b.process_result_destroy_many(results[:])
     for &result in results {
-        result = build.run_cmd_sync({"sh", "-c", "echo 'HELLO, WORLD!'"}, .Capture) or_return
+        result = b.run_cmd_sync({"sh", "-c", "echo 'HELLO, WORLD!'"}, .Capture) or_return
         utils.expect("HELLO, WORLD!\n", result.stdout) or_return
     }
     log.infof("Time elapsed: %v", time.since(before))
@@ -18,6 +18,6 @@ cmd_sync_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    build.run(cmd_sync_start)
+    b.run(cmd_sync_start)
 }
 
