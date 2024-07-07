@@ -197,6 +197,14 @@ _run_cmd_async :: proc(
     }
     append(&argv, nil)
 
+    if g_prog_flags.echo {
+        log.debugf(
+            "$ %s",
+            concat_string_sep(cmd, " ", context.temp_allocator),
+            location = location,
+        )
+    }
+
     child_pid, fork_errno := linux.fork()
     if fork_errno != .NONE {
         log.errorf(

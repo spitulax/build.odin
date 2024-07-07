@@ -17,7 +17,6 @@ Start_Func :: #type proc() -> bool
 
 run :: proc(start_func: Start_Func) {
     ok: bool = true
-    prog_flags: Prog_Flags
     mem_track: mem.Tracking_Allocator
     context.logger = create_console_logger()
     shared_mem, shared_mem_size, shared_mem_ok := process_tracker_init()
@@ -29,7 +28,7 @@ run :: proc(start_func: Start_Func) {
     defer {
         process_tracker_destroy(shared_mem, shared_mem_size)
         free_all(context.temp_allocator)
-        if prog_flags.track_alloc {
+        if g_prog_flags.track_alloc {
             fmt.eprint("\033[1;31m")
             if len(mem_track.allocation_map) > 0 {
                 fmt.eprintfln("### %v unfreed allocations ###", len(mem_track.allocation_map))
@@ -49,14 +48,14 @@ run :: proc(start_func: Start_Func) {
         os.exit(!ok)
     }
 
-    if !parse_args(&prog_flags) {
+    if !parse_args() {
         usage()
         ok = false
         return
     }
 
     context_allocator := context.allocator
-    if prog_flags.track_alloc {
+    if g_prog_flags.track_alloc {
         mem.tracking_allocator_init(&mem_track, context_allocator)
         context_allocator = mem.tracking_allocator(&mem_track)
     }

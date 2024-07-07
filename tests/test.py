@@ -94,7 +94,7 @@ if __name__ == '__main__':
       print('~~~~~~~~~~~~~~~~~~~~')
       print(f'Running {test}...')
       print('\033[0m', end='', flush=True)
-      if subprocess.run(['sh', '-c', f'./{test_bin} --track-alloc']).returncode == 0:
+      if subprocess.run(['sh', '-c', f'./{test_bin} --track-alloc --echo']).returncode == 0:
         print('\033[1;32m', end='', flush=True)
         print(f'{test} passed')
         print('~~~~~~~~~~~~~~~~~~~~')

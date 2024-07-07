@@ -15,6 +15,7 @@ g_process_tracker: ^Process_Tracker
 g_process_tracker_mutex: ^sync.Mutex
 g_shared_mem_arena: virtual.Arena
 g_shared_mem_allocator: mem.Allocator
+g_prog_flags: Prog_Flags
 
 
 Process_Tracker :: #type map[Process_Handle]^Process_Status
@@ -33,7 +34,7 @@ process_tracker_destroy :: proc(shared_mem: rawptr, size: uint) -> (ok: bool) {
 }
 
 
-Default_Logger_Opts :: log.Options{.Level, .Terminal_Color, .Short_File_Path, .Line, .Procedure}
+Default_Logger_Opts :: log.Options{.Level, .Terminal_Color, .Short_File_Path, .Line}
 
 Term_Color_Enum :: enum {
     Reset,
@@ -146,14 +147,16 @@ usage :: proc() {
     fmt.println()
     fmt.println("Options:")
     fmt.println("    --track-alloc      Track for unfreed and double freed memory")
+    fmt.println("    --echo             Echo the command that is running")
 }
 
 Prog_Flags :: struct {
     track_alloc: bool,
+    echo:        bool,
 }
 
 @(require_results)
-parse_args :: proc(prog_flags: ^Prog_Flags) -> (ok: bool) {
+parse_args :: proc() -> (ok: bool) {
     @(require_results)
     next_arg :: proc(args: ^[]string) -> (arg: string, ok: bool) {
         if len(args) <= 0 {
@@ -175,7 +178,9 @@ parse_args :: proc(prog_flags: ^Prog_Flags) -> (ok: bool) {
 
         switch arg {
         case "--track-alloc":
-            prog_flags.track_alloc = true
+            g_prog_flags.track_alloc = true
+        case "--echo":
+            g_prog_flags.echo = true
         case:
             return
         }
