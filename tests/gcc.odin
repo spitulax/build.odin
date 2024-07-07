@@ -2,7 +2,7 @@ package tests
 
 import build "../build_odin"
 import "core:log"
-import "core:strconv"
+import "utils"
 
 gcc_start :: proc() -> (ok: bool) {
     result := build.run_cmd_sync(
@@ -22,15 +22,9 @@ gcc_start :: proc() -> (ok: bool) {
         log.errorf("sh exited with %v: %s", result2.exit, result2.stderr)
         return false
     }
-    expected :: "Hello, World!\n"
-    if result2.stdout != expected {
-        expected_buf := make([]byte, len(expected) * size_of(rune), context.temp_allocator)
-        expected_quoted := strconv.quote(expected_buf, expected)
-        actual_buf := make([]byte, len(result2.stdout) * size_of(rune), context.temp_allocator)
-        actual_quoted := strconv.quote(actual_buf, result2.stdout)
-        log.errorf("expected %s, got %s", expected_quoted, actual_quoted)
-        return false
-    }
+
+    utils.expect("Hello, World!\n", result2.stdout) or_return
+
     return true
 }
 

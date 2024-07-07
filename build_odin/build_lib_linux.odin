@@ -66,7 +66,7 @@ _process_wait :: proc(
             if len(g_process_tracker^) <= 0 {
                 child_appended = false
             } else {
-                current = &g_process_tracker[self.pid]
+                current = g_process_tracker[self.pid]
                 child_appended = true
             }
         }
@@ -151,6 +151,7 @@ _process_wait_many :: proc(
 _process_result_destroy :: proc(self: ^Process_Result, location := #caller_location) {
     delete(self.stdout, loc = location)
     delete(self.stderr, loc = location)
+    self^ = {}
 }
 
 _process_result_destroy_many :: proc(selves: []Process_Result, location := #caller_location) {
@@ -212,7 +213,7 @@ _run_cmd_async :: proc(
         }
 
         pid := linux.getpid()
-        status := Process_Status{}
+        status := new(Process_Status, g_shared_mem_allocator)
         _, builder_err := strings.builder_init_len_cap(
             &status.log,
             0,
@@ -224,8 +225,7 @@ _run_cmd_async :: proc(
         logger := context.logger
         if sync.mutex_guard(g_process_tracker_mutex) {
             assert(g_process_tracker != nil || g_process_tracker_mutex != nil)
-            g_process_tracker[pid] = status
-            current = &g_process_tracker[pid]
+            current = map_insert(g_process_tracker, pid, status)^
             logger = create_builder_logger(
                 &current.log,
                 g_shared_mem_allocator,
@@ -317,15 +317,11 @@ _process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, o
     g_shared_mem_allocator = context.allocator
 
     g_process_tracker = new(Process_Tracker)
-    // FIXME: when the map reallocates past the initial capacity,
-    // the next child process trying to append to it will segfault and leave the mutex locked, creating a deadlock
     _ = reserve(g_process_tracker, 128)
 
     // yep
     process_tracker_mutex := sync.Mutex{}
     process_tracker_mutex_rawptr, _ := mem.alloc(size_of(sync.Mutex))
-    process_tracker_mutex_ptr_rawptr, _ := mem.alloc(size_of(^sync.Mutex))
-    g_process_tracker_mutex = cast(^sync.Mutex)process_tracker_mutex_ptr_rawptr
     g_process_tracker_mutex =
     cast(^sync.Mutex)libc.memmove(
         process_tracker_mutex_rawptr,
@@ -471,6 +467,7 @@ fd_close :: proc(fd: linux.Fd, location: runtime.Source_Code_Location) -> (ok: b
     return true
 }
 
+// null-terminated array
 environ :: proc() -> [^]cstring #no_bounds_check {
     env: [^]cstring = &runtime.args__[len(runtime.args__)]
     assert(env[0] == nil)

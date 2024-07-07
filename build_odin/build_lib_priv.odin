@@ -17,7 +17,7 @@ g_shared_mem_arena: virtual.Arena
 g_shared_mem_allocator: mem.Allocator
 
 
-Process_Tracker :: #type map[Process_Handle]Process_Status
+Process_Tracker :: #type map[Process_Handle]^Process_Status
 Process_Status :: struct {
     has_run: bool,
     log:     strings.Builder,
