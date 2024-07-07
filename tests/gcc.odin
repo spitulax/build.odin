@@ -5,8 +5,12 @@ import "core:log"
 import "utils"
 
 gcc_start :: proc() -> (ok: bool) {
+    cc := b.program("cc")
+    sh := b.program("sh")
+
     result := b.run_cmd_sync(
-        {"cc", "-o", "./rats/gcc/main", "./rats/gcc/main.c"},
+        cc,
+        {"-o", "./rats/gcc/main", "./rats/gcc/main.c"},
         .Capture,
     ) or_return
     defer b.process_result_destroy(&result)
@@ -16,7 +20,7 @@ gcc_start :: proc() -> (ok: bool) {
     }
     // TODO: specify environment variable
     // eg. adding ./rats/gcc/main to PATH for this operation to call it without sh
-    result2 := b.run_cmd_sync({"sh", "-c", "./rats/gcc/main"}, .Capture) or_return
+    result2 := b.run_cmd_sync(sh, {"-c", "./rats/gcc/main"}, .Capture) or_return
     defer b.process_result_destroy(&result2)
     if result2.exit != nil {
         log.errorf("sh exited with %v: %s", result2.exit, result2.stderr)

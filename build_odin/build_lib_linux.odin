@@ -161,19 +161,15 @@ _process_result_destroy_many :: proc(selves: []Process_Result, location := #call
 }
 
 
-_run_cmd_async :: proc(
-    cmd: []string,
+_run_cmd_async_unchecked :: proc(
+    cmd: string,
+    args: []string,
     option: Run_Cmd_Option = .Share,
     location := #caller_location,
 ) -> (
     process: Process,
     ok: bool,
 ) {
-    if len(cmd) < 1 {
-        log.error("Command is empty", location = location)
-        return
-    }
-
     stdout_pipe, stderr_pipe: Pipe
     dev_null: linux.Fd
     if option == .Capture || option == .Silent {
@@ -190,17 +186,20 @@ _run_cmd_async :: proc(
         pipe_init(&stderr_pipe, location) or_return
     }
 
-    argv := make([dynamic]cstring, 0, len(cmd) + 2)
+    argv := make([dynamic]cstring, 0, len(args) + 3)
     append(&argv, "/usr/bin/env")
-    for arg in cmd {
+    append(&argv, fmt.ctprint(cmd))
+    for arg in args {
         append(&argv, fmt.ctprintf("%s", arg))
     }
     append(&argv, nil)
 
     if g_prog_flags.echo {
         log.debugf(
-            "$ %s",
-            concat_string_sep(cmd, " ", context.temp_allocator),
+            "(%v) %s %s",
+            option,
+            cmd,
+            concat_string_sep(args, " ", context.temp_allocator),
             location = location,
         )
     }
@@ -294,6 +293,24 @@ _run_cmd_async :: proc(
             stderr_pipe = maybe_stderr_pipe,
         },
         true
+}
+
+
+_program :: proc($name: string, location := #caller_location) -> Program {
+    echo := g_prog_flags.echo
+    g_prog_flags.echo = false
+    res, ok := run_cmd_sync_unchecked(
+        "sh",
+        {"-c", "command -v " + name},
+        .Silent,
+        context.temp_allocator,
+    )
+    g_prog_flags.echo = echo
+    if !ok {
+        log.warnf("Failed to find `%s`", name)
+    }
+    found := res.exit == nil && ok
+    return {name = name, found = found}
 }
 
 

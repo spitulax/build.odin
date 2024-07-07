@@ -4,8 +4,11 @@ import b "../build_odin"
 import "core:log"
 
 capture_start :: proc() -> (ok: bool) {
+    sh := b.program("sh")
+
     result1 := b.run_cmd_sync(
-        {"sh", "-c", "echo 'HELLO, STDOUT!' > /dev/stdout"},
+        sh,
+        {"-c", "echo 'HELLO, STDOUT!' > /dev/stdout"},
         .Capture,
     ) or_return
     defer b.process_result_destroy(&result1)
@@ -15,7 +18,8 @@ capture_start :: proc() -> (ok: bool) {
     }
 
     result2 := b.run_cmd_sync(
-        {"sh", "-c", "echo 'HELLO, STDERR!' > /dev/stderr"},
+        sh,
+        {"-c", "echo 'HELLO, STDERR!' > /dev/stderr"},
         .Capture,
     ) or_return
     defer b.process_result_destroy(&result2)
@@ -25,7 +29,8 @@ capture_start :: proc() -> (ok: bool) {
     }
 
     result3 := b.run_cmd_sync(
-        {"sh", "-c", "echo 'HELLO, STDOUT!' > /dev/stdout; echo 'HELLO, STDERR!' > /dev/stderr"},
+        sh,
+        {"-c", "echo 'HELLO, STDOUT!' > /dev/stdout; echo 'HELLO, STDERR!' > /dev/stderr"},
         .Capture,
     ) or_return
     defer b.process_result_destroy(&result3)

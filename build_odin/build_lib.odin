@@ -2,6 +2,7 @@ package build_lib
 
 import "base:runtime"
 import "core:fmt"
+import "core:log"
 import "core:mem"
 import "core:os"
 import "core:time"
@@ -133,19 +134,48 @@ Run_Cmd_Option :: enum {
     Capture,
 }
 
-run_cmd_async :: proc(
-    cmd: []string,
+run_cmd_async :: proc {
+    run_cmd_async_unchecked,
+    run_cmd_async_checked,
+}
+
+run_cmd_sync :: proc {
+    run_cmd_sync_unchecked,
+    run_cmd_sync_checked,
+}
+
+run_cmd_async_unchecked :: proc(
+    cmd: string,
+    args: []string = nil,
     option: Run_Cmd_Option = .Share,
     location := #caller_location,
 ) -> (
     process: Process,
     ok: bool,
 ) {
-    return _run_cmd_async(cmd, option, location)
+    return _run_cmd_async_unchecked(cmd, args, option, location)
 }
 
-run_cmd_sync :: proc(
-    cmd: []string,
+// `process` is empty or {} if `cmd` is not found
+run_cmd_async_checked :: proc(
+    cmd: Program,
+    args: []string = nil,
+    option: Run_Cmd_Option = .Share,
+    require: bool = true,
+    location := #caller_location,
+) -> (
+    process: Process,
+    ok: bool,
+) {
+    if !check_program(cmd, require, location) {
+        return {}, !require
+    }
+    return _run_cmd_async_unchecked(cmd.name, args, option, location)
+}
+
+run_cmd_sync_unchecked :: proc(
+    cmd: string,
+    args: []string = nil,
     option: Run_Cmd_Option = .Share,
     allocator := context.allocator,
     location := #caller_location,
@@ -153,7 +183,58 @@ run_cmd_sync :: proc(
     result: Process_Result,
     ok: bool,
 ) {
-    process := run_cmd_async(cmd, option, location) or_return
+    process := run_cmd_async_unchecked(cmd, args, option, location) or_return
     return process_wait(process, allocator, location)
+}
+
+// `result` is empty or {} if `cmd` is not found
+run_cmd_sync_checked :: proc(
+    cmd: Program,
+    args: []string = nil,
+    option: Run_Cmd_Option = .Share,
+    allocator := context.allocator,
+    require: bool = true,
+    location := #caller_location,
+) -> (
+    result: Process_Result,
+    ok: bool,
+) {
+    if !check_program(cmd, require, location) {
+        return {}, !require
+    }
+    process := run_cmd_async_unchecked(cmd.name, args, option, location) or_return
+    return process_wait(process, allocator, location)
+}
+
+
+Program :: struct {
+    found: bool,
+    name:  string,
+    //full_path: string, // would require allocation
+}
+
+@(require_results)
+program :: proc($name: string, location := #caller_location) -> Program {
+    return _program(name, location)
+}
+
+@(require_results)
+check_program :: proc(
+    prog: Program,
+    require: bool = true,
+    location := #caller_location,
+) -> (
+    found: bool,
+) {
+    if !prog.found {
+        msg := fmt.tprintf("`%v` does not exist", prog.name)
+        if require {
+            log.error(msg, location = location)
+        } else {
+            log.warn(msg, location = location)
+        }
+        return
+    }
+    return true
 }
 

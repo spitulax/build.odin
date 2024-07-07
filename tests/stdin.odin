@@ -3,10 +3,12 @@ package tests
 import b "../build_odin"
 
 stdin_start :: proc() -> (ok: bool) {
+    sh := b.program("sh")
     // TODO: redirect something into stdin
-    b.run_cmd_sync({"sh", "-c", "./rats/stdin"}, .Silent, context.temp_allocator) or_return
+    b.run_cmd_sync(sh, {"-c", "./rats/stdin"}, .Silent, context.temp_allocator) or_return
     b.run_cmd_sync(
-        {"sh", "-c", "read TEST && echo $TEST"},
+        sh,
+        {"-c", "read TEST && echo $TEST"},
         .Capture,
         context.temp_allocator,
     ) or_return
