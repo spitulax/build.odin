@@ -441,7 +441,6 @@ pipe_read :: proc(
     pipe_close_write(self, location) or_return
     total_bytes_read := 0
     buf := make([dynamic]u8, INITIAL_BUF_SIZE)
-    defer delete(buf, loc = location)
     for {
         bytes_read, errno := linux.read(self.read, buf[total_bytes_read:])
         if bytes_read <= 0 {
@@ -456,8 +455,7 @@ pipe_read :: proc(
             resize(&buf, 2 * len(buf))
         }
     }
-    buf[total_bytes_read] = 0
-    result = strings.clone_from_cstring(cstring(raw_data(buf)), allocator, location)
+    result = string(buf[:total_bytes_read])
     ok = true
     return
 }
