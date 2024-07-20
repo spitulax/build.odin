@@ -5,6 +5,8 @@ import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:os"
+import "core:path/filepath"
+import "core:strings"
 import "core:time"
 
 
@@ -13,10 +15,9 @@ SUPPORTED_OS :: OS_Set{.Linux}
 #assert(ODIN_OS in SUPPORTED_OS)
 
 
-Start_Func :: #type proc() -> bool
+Start_Proc :: #type proc() -> bool
 
-
-run :: proc(start_func: Start_Func) {
+start :: proc(start_proc: Start_Proc) {
     ok: bool = true
     mem_track: mem.Tracking_Allocator
     context.logger = create_console_logger()
@@ -62,14 +63,13 @@ run :: proc(start_func: Start_Func) {
     }
     context.allocator = context_allocator
 
-    if !start_func() {
+    if !start_proc() {
         ok = false
         return
     }
 
     assert(len(g_process_tracker) == 0)
     ok = true
-    return
 }
 
 
@@ -236,5 +236,91 @@ check_program :: proc(
         return
     }
     return true
+}
+
+
+Stage :: struct {
+    name:         string,
+    parent:       ^Stage,
+    dependencies: [dynamic]^Stage,
+    procedure:    Stage_Proc,
+    userdata:     rawptr,
+    require:      bool,
+    status:       Stage_Status,
+    location:     Location,
+    allocator:    runtime.Allocator,
+}
+
+Stage_Status :: enum {
+    Unevaluated,
+    Waiting,
+    Success,
+    Failed,
+}
+
+Stage_Proc :: #type proc(self: ^Stage, userdata: rawptr) -> (ok: bool)
+
+stage_make :: proc(
+    procedure: Stage_Proc,
+    name: string = "",
+    userdata: rawptr = nil,
+    require: bool = true,
+    allocator := context.allocator,
+    location := #caller_location,
+) -> Stage {
+    return Stage {
+        procedure = procedure,
+        name = strings.clone(name, allocator),
+        userdata = userdata,
+        require = require,
+        status = .Unevaluated,
+        dependencies = make([dynamic]^Stage, allocator),
+        allocator = allocator,
+        location = location,
+    }
+}
+
+// TODO:docs `dependency` will be owned by `self` after this
+stage_add_dependency :: proc(self: ^Stage, dependency: ^Stage) {
+    dependency.parent = self
+    append(&self.dependencies, dependency)
+}
+
+stage_clone :: proc(self: Stage, allocator := context.allocator) -> Stage {
+    unimplemented()
+}
+
+stage_name :: proc(self: Stage) -> string {
+    return(
+        (self.name != "") \
+        ? self.name \
+        : fmt.tprintf("<%v:%v>", filepath.base(self.location.file_path), self.location.line) \
+    )
+}
+
+stage_parents :: proc(self: ^Stage, allocator := context.allocator) -> []string {
+    result := make([dynamic]string, allocator)
+    cur := self.parent
+    for {
+        if cur == nil {break}
+        append(&result, stage_name(cur^))
+        cur = cur.parent
+    }
+    return result[:]
+}
+
+print_stage_tree :: proc(root: ^Stage) {
+    unimplemented()
+}
+
+run_stages :: proc(root: ^Stage, location := #caller_location) -> (ok: bool) {
+    return stage_eval(root, location)
+}
+
+destroy_stages :: proc(root: ^Stage) {
+    for &dep in root.dependencies {
+        destroy_stages(dep)
+    }
+    stage_destroy(root)
 }
 

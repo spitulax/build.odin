@@ -1,6 +1,7 @@
 //+private
 package build_lib
 
+import "base:runtime"
 import "core:encoding/ansi"
 import "core:fmt"
 import "core:log"
@@ -18,6 +19,9 @@ g_shared_mem_allocator: mem.Allocator
 g_prog_flags: Prog_Flags
 
 
+Location :: runtime.Source_Code_Location
+
+
 Process_Tracker :: #type map[Process_Handle]^Process_Status
 Process_Status :: struct {
     has_run: bool,
@@ -31,6 +35,48 @@ process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, ok
 
 process_tracker_destroy :: proc(shared_mem: rawptr, size: uint) -> (ok: bool) {
     return _process_tracker_destroy(shared_mem, size)
+}
+
+
+stage_eval :: proc(self: ^Stage, location: Location) -> (ok: bool) {
+    if self.status != .Unevaluated {return}
+    if g_prog_flags.verbose {
+        log.debugf("Evaluating stage `%s`", stage_name(self^), location = location)
+    }
+    self.status = .Waiting
+    for &dep in self.dependencies {
+        stage_eval(dep, location)
+        if dep.status == .Failed {
+            msg := fmt.tprintf(
+                "Failed to run stage `%s` needed by `%s`",
+                stage_name(dep^),
+                concat_string_sep(
+                    stage_parents(dep, context.temp_allocator),
+                    " -> ",
+                    context.temp_allocator,
+                ),
+            )
+            if dep.require {
+                log.error(msg, location = location)
+                self.status = .Failed
+                return false
+            } else {
+                log.warn(msg, location = location)
+            }
+        }
+    }
+    if g_prog_flags.verbose {
+        log.debugf("Running stage `%s`", stage_name(self^), location = location)
+    }
+    if self.status != .Failed {
+        self.status = (self.procedure(self, self.userdata)) ? .Success : .Failed
+    }
+    return true
+}
+
+stage_destroy :: proc(self: ^Stage) {
+    delete(self.name)
+    delete(self.dependencies)
 }
 
 
@@ -148,11 +194,13 @@ usage :: proc() {
     fmt.println("Options:")
     fmt.println("    --track-alloc      Track for unfreed and double freed memory")
     fmt.println("    --echo             Echo the command that is running")
+    fmt.println("    --verbose          Echo the stage evaluations and executions")
 }
 
 Prog_Flags :: struct {
     track_alloc: bool,
     echo:        bool,
+    verbose:     bool,
 }
 
 @(require_results)
@@ -181,6 +229,8 @@ parse_args :: proc() -> (ok: bool) {
             g_prog_flags.track_alloc = true
         case "--echo":
             g_prog_flags.echo = true
+        case "--verbose":
+            g_prog_flags.verbose = true
         case:
             return
         }

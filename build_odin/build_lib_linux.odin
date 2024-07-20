@@ -375,7 +375,7 @@ Pipe :: struct {
 }
 
 @(require_results)
-pipe_init :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+pipe_init :: proc(self: ^Pipe, location: Location) -> (ok: bool) {
     if errno := linux.pipe2(&self._both, {.CLOEXEC}); errno != .NONE {
         log.errorf("Failed to create pipes: %s", libc.strerror(i32(errno)), location = location)
         return false
@@ -386,7 +386,7 @@ pipe_init :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: b
 }
 
 @(require_results)
-pipe_close_read :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+pipe_close_read :: proc(self: ^Pipe, location: Location) -> (ok: bool) {
     if errno := linux.close(self.read); errno != .NONE {
         log.errorf("Failed to close read pipe: %s", libc.strerror(i32(errno)), location = location)
         return false
@@ -395,7 +395,7 @@ pipe_close_read :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> 
 }
 
 @(require_results)
-pipe_close_write :: proc(self: ^Pipe, location: runtime.Source_Code_Location) -> (ok: bool) {
+pipe_close_write :: proc(self: ^Pipe, location: Location) -> (ok: bool) {
     if errno := linux.close(self.write); errno != .NONE {
         log.errorf(
             "Failed to close write pipe: %s",
@@ -411,7 +411,7 @@ pipe_close_write :: proc(self: ^Pipe, location: runtime.Source_Code_Location) ->
 pipe_redirect :: proc(
     self: ^Pipe,
     newfd: linux.Fd,
-    location: runtime.Source_Code_Location,
+    location: Location,
 ) -> (
     ok: bool,
 ) {
@@ -431,7 +431,7 @@ pipe_redirect :: proc(
 @(require_results)
 pipe_read :: proc(
     self: ^Pipe,
-    location: runtime.Source_Code_Location,
+    location: Location,
     allocator := context.allocator,
 ) -> (
     result: string,
@@ -464,7 +464,7 @@ pipe_read :: proc(
 fd_redirect :: proc(
     fd: linux.Fd,
     newfd: linux.Fd,
-    location: runtime.Source_Code_Location,
+    location: Location,
 ) -> (
     ok: bool,
 ) {
@@ -482,7 +482,7 @@ fd_redirect :: proc(
 }
 
 @(require_results)
-fd_close :: proc(fd: linux.Fd, location: runtime.Source_Code_Location) -> (ok: bool) {
+fd_close :: proc(fd: linux.Fd, location: Location) -> (ok: bool) {
     if errno := linux.close(fd); errno != .NONE {
         log.errorf("Failed to close fd %v: %s", fd, libc.strerror(i32(errno)), location = location)
         return false

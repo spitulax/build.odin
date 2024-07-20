@@ -1,10 +1,28 @@
 package test_utils
 
+import "base:intrinsics"
 import "core:log"
+import "core:mem"
 import "core:strconv"
+
+_ :: mem
 
 expect :: proc {
     expect_string,
+    expect_any,
+}
+
+@(require_results)
+expect_any :: proc(
+    expected: $T,
+    actual: T,
+    location := #caller_location,
+) -> bool where intrinsics.type_is_comparable(T) {
+    if expected != actual {
+        log.errorf("Expected `%v`, got `%v`", expected, actual, location = location)
+        return false
+    }
+    return true
 }
 
 @(require_results)
