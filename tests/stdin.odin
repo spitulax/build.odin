@@ -16,6 +16,6 @@ stdin_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    b.run(stdin_start)
+    b.start(stdin_start)
 }
 

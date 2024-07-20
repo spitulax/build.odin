@@ -3,7 +3,7 @@ package tests
 import b "../build_odin"
 import "utils"
 
-simple_start :: proc() -> (ok: bool) {
+hello_start :: proc() -> (ok: bool) {
     sh := b.program("sh")
 
     result := b.run_prog_sync(sh, {"-c", "echo 'Hello, World!'"}, .Share) or_return
@@ -23,6 +23,6 @@ simple_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    b.run(simple_start)
+    b.start(hello_start)
 }
 

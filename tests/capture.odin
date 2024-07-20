@@ -43,6 +43,6 @@ capture_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    b.run(capture_start)
+    b.start(capture_start)
 }
 

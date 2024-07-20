@@ -4,7 +4,7 @@ import b "../build_odin"
 import "core:log"
 import "utils"
 
-gcc_start :: proc() -> (ok: bool) {
+build_stage_proc :: proc(self: ^b.Stage, userdata: rawptr) -> (ok: bool) {
     cc := b.program("cc")
     sh := b.program("sh")
 
@@ -32,7 +32,15 @@ gcc_start :: proc() -> (ok: bool) {
     return true
 }
 
+gcc_start :: proc() -> (ok: bool) {
+    build_stage := b.stage_make(build_stage_proc, "build")
+    defer b.destroy_stages(&build_stage)
+
+    b.run_stages(&build_stage) or_return
+    return true
+}
+
 main :: proc() {
-    b.run(gcc_start)
+    b.start(gcc_start)
 }
 

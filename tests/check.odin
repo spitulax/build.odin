@@ -3,7 +3,7 @@ package tests
 import b "../build_odin"
 
 main :: proc() {
-    b.run(proc() -> (ok: bool) {
+    b.start(proc() -> (ok: bool) {
         res := b.run_prog_sync(
             b.program("notarealcommand"),
             {"--help"},

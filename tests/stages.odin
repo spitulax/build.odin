@@ -31,7 +31,7 @@ not_ok_stage_proc :: proc(self: ^b.Stage, userdata: rawptr) -> (ok: bool) {
     return false
 }
 
-start :: proc() -> (ok: bool) {
+stages_start :: proc() -> (ok: bool) {
     userdata := 0
 
     root_stage := b.stage_make(init_stage_proc, "root")
@@ -55,6 +55,6 @@ start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    b.start(start)
+    b.start(stages_start)
 }
 

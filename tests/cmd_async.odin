@@ -21,6 +21,6 @@ cmd_async_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    b.run(cmd_async_start)
+    b.start(cmd_async_start)
 }
 

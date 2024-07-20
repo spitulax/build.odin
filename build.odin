@@ -9,6 +9,6 @@ start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    b.run(start)
+    b.start(start)
 }
 

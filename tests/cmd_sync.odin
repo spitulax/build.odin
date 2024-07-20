@@ -19,6 +19,6 @@ cmd_sync_start :: proc() -> (ok: bool) {
 }
 
 main :: proc() {
-    b.run(cmd_sync_start)
+    b.start(cmd_sync_start)
 }
 
