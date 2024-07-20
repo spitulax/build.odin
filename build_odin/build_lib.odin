@@ -145,7 +145,7 @@ run_prog_sync :: proc {
 }
 
 run_prog_async_unchecked :: proc(
-    cmd: string,
+    prog: string,
     args: []string = nil,
     option: Run_Prog_Option = .Share,
     location := #caller_location,
@@ -153,12 +153,12 @@ run_prog_async_unchecked :: proc(
     process: Process,
     ok: bool,
 ) {
-    return _run_prog_async_unchecked(cmd, args, option, location)
+    return _run_prog_async_unchecked(prog, args, option, location)
 }
 
 // `process` is empty or {} if `cmd` is not found
 run_prog_async_checked :: proc(
-    cmd: Program,
+    prog: Program,
     args: []string = nil,
     option: Run_Prog_Option = .Share,
     require: bool = true,
@@ -167,14 +167,14 @@ run_prog_async_checked :: proc(
     process: Process,
     ok: bool,
 ) {
-    if !check_program(cmd, require, location) {
+    if !check_program(prog, require, location) {
         return {}, !require
     }
-    return _run_prog_async_unchecked(cmd.name, args, option, location)
+    return _run_prog_async_unchecked(prog.name, args, option, location)
 }
 
 run_prog_sync_unchecked :: proc(
-    cmd: string,
+    prog: string,
     args: []string = nil,
     option: Run_Prog_Option = .Share,
     allocator := context.allocator,
@@ -183,13 +183,13 @@ run_prog_sync_unchecked :: proc(
     result: Process_Result,
     ok: bool,
 ) {
-    process := run_prog_async_unchecked(cmd, args, option, location) or_return
+    process := run_prog_async_unchecked(prog, args, option, location) or_return
     return process_wait(process, allocator, location)
 }
 
 // `result` is empty or {} if `cmd` is not found
 run_prog_sync_checked :: proc(
-    cmd: Program,
+    prog: Program,
     args: []string = nil,
     option: Run_Prog_Option = .Share,
     allocator := context.allocator,
@@ -199,10 +199,10 @@ run_prog_sync_checked :: proc(
     result: Process_Result,
     ok: bool,
 ) {
-    if !check_program(cmd, require, location) {
+    if !check_program(prog, require, location) {
         return {}, !require
     }
-    process := run_prog_async_unchecked(cmd.name, args, option, location) or_return
+    process := run_prog_async_unchecked(prog.name, args, option, location) or_return
     return process_wait(process, allocator, location)
 }
 

@@ -162,7 +162,7 @@ _process_result_destroy_many :: proc(selves: []Process_Result, location := #call
 
 
 _run_prog_async_unchecked :: proc(
-    cmd: string,
+    prog: string,
     args: []string,
     option: Run_Prog_Option = .Share,
     location := #caller_location,
@@ -188,7 +188,7 @@ _run_prog_async_unchecked :: proc(
 
     argv := make([dynamic]cstring, 0, len(args) + 3)
     append(&argv, "/usr/bin/env")
-    append(&argv, fmt.ctprint(cmd))
+    append(&argv, fmt.ctprint(prog))
     for arg in args {
         append(&argv, fmt.ctprintf("%s", arg))
     }
@@ -198,7 +198,7 @@ _run_prog_async_unchecked :: proc(
         log.debugf(
             "(%v) %s %s",
             option,
-            cmd,
+            prog,
             concat_string_sep(args, " ", context.temp_allocator),
             location = location,
         )
@@ -269,7 +269,7 @@ _run_prog_async_unchecked :: proc(
             assert(exch_ok)
             log.errorf(
                 "Failed to run `%s`: %s",
-                cmd,
+                prog,
                 libc.strerror(i32(errno)),
                 location = location,
             )
@@ -440,7 +440,7 @@ pipe_read :: proc(
     INITIAL_BUF_SIZE :: 1024
     pipe_close_write(self, location) or_return
     total_bytes_read := 0
-    buf := make([dynamic]u8, INITIAL_BUF_SIZE)
+    buf := make([dynamic]u8, INITIAL_BUF_SIZE, allocator)
     for {
         bytes_read, errno := linux.read(self.read, buf[total_bytes_read:])
         if bytes_read <= 0 {
