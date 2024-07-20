@@ -11,7 +11,7 @@ cmd_sync_start :: proc() -> (ok: bool) {
     defer b.process_result_destroy_many(results[:])
     sh := b.program("sh")
     for &result in results {
-        result = b.run_cmd_sync(sh, {"-c", "echo 'HELLO, WORLD!'"}, .Capture) or_return
+        result = b.run_prog_sync(sh, {"-c", "echo 'HELLO, WORLD!'"}, .Capture) or_return
         utils.expect("HELLO, WORLD!\n", result.stdout) or_return
     }
     log.infof("Time elapsed: %v", time.since(before))

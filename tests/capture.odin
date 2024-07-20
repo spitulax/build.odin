@@ -6,7 +6,7 @@ import "core:log"
 capture_start :: proc() -> (ok: bool) {
     sh := b.program("sh")
 
-    result1 := b.run_cmd_sync(
+    result1 := b.run_prog_sync(
         sh,
         {"-c", "echo 'HELLO, STDOUT!' > /dev/stdout"},
         .Capture,
@@ -17,7 +17,7 @@ capture_start :: proc() -> (ok: bool) {
         return false
     }
 
-    result2 := b.run_cmd_sync(
+    result2 := b.run_prog_sync(
         sh,
         {"-c", "echo 'HELLO, STDERR!' > /dev/stderr"},
         .Capture,
@@ -28,7 +28,7 @@ capture_start :: proc() -> (ok: bool) {
         return false
     }
 
-    result3 := b.run_cmd_sync(
+    result3 := b.run_prog_sync(
         sh,
         {"-c", "echo 'HELLO, STDOUT!' > /dev/stdout; echo 'HELLO, STDERR!' > /dev/stderr"},
         .Capture,

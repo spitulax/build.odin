@@ -161,10 +161,10 @@ _process_result_destroy_many :: proc(selves: []Process_Result, location := #call
 }
 
 
-_run_cmd_async_unchecked :: proc(
+_run_prog_async_unchecked :: proc(
     cmd: string,
     args: []string,
-    option: Run_Cmd_Option = .Share,
+    option: Run_Prog_Option = .Share,
     location := #caller_location,
 ) -> (
     process: Process,
@@ -299,7 +299,7 @@ _run_cmd_async_unchecked :: proc(
 _program :: proc($name: string, location := #caller_location) -> Program {
     echo := g_prog_flags.echo
     g_prog_flags.echo = false
-    res, ok := run_cmd_sync_unchecked(
+    res, ok := run_prog_sync_unchecked(
         "sh",
         {"-c", "command -v " + name},
         .Silent,

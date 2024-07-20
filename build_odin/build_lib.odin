@@ -114,7 +114,7 @@ process_wait_many :: proc(
 Process_Result :: struct {
     exit:     Process_Exit, // nil on success
     duration: time.Duration,
-    stdout:   string, // both are "" if run_cmd_* is not capturing
+    stdout:   string, // both are "" if run_prog_* is not capturing
     stderr:   string, // I didn't make them both Maybe() for "convenience" when accessing them
 }
 
@@ -128,39 +128,39 @@ process_result_destroy_many :: proc(selves: []Process_Result, location := #calle
 
 
 // FIXME: *some* programs that read from stdin may hang if called with .Silent or .Capture
-Run_Cmd_Option :: enum {
+Run_Prog_Option :: enum {
     Share,
     Silent,
     Capture,
 }
 
-run_cmd_async :: proc {
-    run_cmd_async_unchecked,
-    run_cmd_async_checked,
+run_prog_async :: proc {
+    run_prog_async_unchecked,
+    run_prog_async_checked,
 }
 
-run_cmd_sync :: proc {
-    run_cmd_sync_unchecked,
-    run_cmd_sync_checked,
+run_prog_sync :: proc {
+    run_prog_sync_unchecked,
+    run_prog_sync_checked,
 }
 
-run_cmd_async_unchecked :: proc(
+run_prog_async_unchecked :: proc(
     cmd: string,
     args: []string = nil,
-    option: Run_Cmd_Option = .Share,
+    option: Run_Prog_Option = .Share,
     location := #caller_location,
 ) -> (
     process: Process,
     ok: bool,
 ) {
-    return _run_cmd_async_unchecked(cmd, args, option, location)
+    return _run_prog_async_unchecked(cmd, args, option, location)
 }
 
 // `process` is empty or {} if `cmd` is not found
-run_cmd_async_checked :: proc(
+run_prog_async_checked :: proc(
     cmd: Program,
     args: []string = nil,
-    option: Run_Cmd_Option = .Share,
+    option: Run_Prog_Option = .Share,
     require: bool = true,
     location := #caller_location,
 ) -> (
@@ -170,28 +170,28 @@ run_cmd_async_checked :: proc(
     if !check_program(cmd, require, location) {
         return {}, !require
     }
-    return _run_cmd_async_unchecked(cmd.name, args, option, location)
+    return _run_prog_async_unchecked(cmd.name, args, option, location)
 }
 
-run_cmd_sync_unchecked :: proc(
+run_prog_sync_unchecked :: proc(
     cmd: string,
     args: []string = nil,
-    option: Run_Cmd_Option = .Share,
+    option: Run_Prog_Option = .Share,
     allocator := context.allocator,
     location := #caller_location,
 ) -> (
     result: Process_Result,
     ok: bool,
 ) {
-    process := run_cmd_async_unchecked(cmd, args, option, location) or_return
+    process := run_prog_async_unchecked(cmd, args, option, location) or_return
     return process_wait(process, allocator, location)
 }
 
 // `result` is empty or {} if `cmd` is not found
-run_cmd_sync_checked :: proc(
+run_prog_sync_checked :: proc(
     cmd: Program,
     args: []string = nil,
-    option: Run_Cmd_Option = .Share,
+    option: Run_Prog_Option = .Share,
     allocator := context.allocator,
     require: bool = true,
     location := #caller_location,
@@ -202,7 +202,7 @@ run_cmd_sync_checked :: proc(
     if !check_program(cmd, require, location) {
         return {}, !require
     }
-    process := run_cmd_async_unchecked(cmd.name, args, option, location) or_return
+    process := run_prog_async_unchecked(cmd.name, args, option, location) or_return
     return process_wait(process, allocator, location)
 }
 

@@ -189,3 +189,16 @@ parse_args :: proc() -> (ok: bool) {
     return true
 }
 
+
+concat_string_sep :: proc(strs: []string, sep: string, allocator := context.allocator) -> string {
+    sb: strings.Builder
+    strings.builder_init(&sb, allocator)
+    for str, i in strs {
+        if i > 0 {
+            fmt.sbprint(&sb, sep)
+        }
+        fmt.sbprint(&sb, str)
+    }
+    return strings.to_string(sb)
+}
+

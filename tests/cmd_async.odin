@@ -10,7 +10,7 @@ cmd_async_start :: proc() -> (ok: bool) {
     processes: [10]b.Process
     sh := b.program("sh")
     for &process in processes {
-        process = b.run_cmd_async(sh, {"-c", "echo 'HELLO, WORLD!'"}, .Capture) or_return
+        process = b.run_prog_async(sh, {"-c", "echo 'HELLO, WORLD!'"}, .Capture) or_return
     }
     results := b.process_wait_many(processes[:], context.temp_allocator) or_return
     for result in results {
