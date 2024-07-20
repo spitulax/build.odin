@@ -280,7 +280,7 @@ stage_make :: proc(
     }
 }
 
-// TODO:docs `dependency` will be owned by `self` after this
+// DOCS: `dependency` will be owned by `self` after this
 stage_add_dependency :: proc(self: ^Stage, dependency: ^Stage) {
     dependency.parent = self
     append(&self.dependencies, dependency)
