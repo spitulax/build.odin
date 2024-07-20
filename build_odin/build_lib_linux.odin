@@ -7,16 +7,12 @@ import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:mem/virtual"
+import "core:os"
 import "core:slice"
 import "core:strings"
 import "core:sync"
 import "core:sys/linux"
 import "core:time"
-
-
-STDIN_FILENO :: 0
-STDOUT_FILENO :: 1
-STDERR_FILENO :: 2
 
 
 _Exit :: distinct u32
@@ -245,17 +241,17 @@ _run_prog_async_unchecked :: proc(
         case .Share:
             break
         case .Silent:
-            if !fd_redirect(dev_null, STDOUT_FILENO, location) {fail()}
-            if !fd_redirect(dev_null, STDERR_FILENO, location) {fail()}
-            if !fd_redirect(dev_null, STDIN_FILENO, location) {fail()}
+            if !fd_redirect(dev_null, linux.Fd(os.stdout), location) {fail()}
+            if !fd_redirect(dev_null, linux.Fd(os.stderr), location) {fail()}
+            if !fd_redirect(dev_null, linux.Fd(os.stdin), location) {fail()}
             if !fd_close(dev_null, location) {fail()}
         case .Capture:
             if !pipe_close_read(&stdout_pipe, location) {fail()}
             if !pipe_close_read(&stderr_pipe, location) {fail()}
 
-            if !pipe_redirect(&stdout_pipe, STDOUT_FILENO, location) {fail()}
-            if !pipe_redirect(&stderr_pipe, STDERR_FILENO, location) {fail()}
-            if !fd_redirect(dev_null, STDIN_FILENO, location) {fail()}
+            if !pipe_redirect(&stdout_pipe, linux.Fd(os.stdout), location) {fail()}
+            if !pipe_redirect(&stderr_pipe, linux.Fd(os.stderr), location) {fail()}
+            if !fd_redirect(dev_null, linux.Fd(os.stdin), location) {fail()}
 
             if !pipe_close_write(&stdout_pipe, location) {fail()}
             if !pipe_close_write(&stderr_pipe, location) {fail()}
@@ -408,13 +404,7 @@ pipe_close_write :: proc(self: ^Pipe, location: Location) -> (ok: bool) {
 }
 
 @(require_results)
-pipe_redirect :: proc(
-    self: ^Pipe,
-    newfd: linux.Fd,
-    location: Location,
-) -> (
-    ok: bool,
-) {
+pipe_redirect :: proc(self: ^Pipe, newfd: linux.Fd, location: Location) -> (ok: bool) {
     if _, errno := linux.dup2(self.write, newfd); errno != .NONE {
         log.errorf(
             "Failed to redirect oldfd: %v, newfd: %v: %s",
@@ -461,13 +451,7 @@ pipe_read :: proc(
 }
 
 @(require_results)
-fd_redirect :: proc(
-    fd: linux.Fd,
-    newfd: linux.Fd,
-    location: Location,
-) -> (
-    ok: bool,
-) {
+fd_redirect :: proc(fd: linux.Fd, newfd: linux.Fd, location: Location) -> (ok: bool) {
     if _, errno := linux.dup2(fd, newfd); errno != .NONE {
         log.errorf(
             "Failed to redirect oldfd: %v, newfd: %v: %s",
