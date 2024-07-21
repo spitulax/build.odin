@@ -59,7 +59,7 @@ if __name__ == '__main__':
   except FileExistsError:
     pass
 
-  lib_modified = calc_max_modtime(subprocess.run(['sh', '-c', 'find ../build_odin -type f -name \'*.odin\''], capture_output=True).stdout.decode('utf-8').splitlines())
+  lib_modified = calc_max_modtime(subprocess.run(['sh', '-c', 'find .. -type f -name \'*.odin\''], capture_output=True).stdout.decode('utf-8').splitlines())
   utils_modified = calc_max_modtime(subprocess.run(['sh', '-c', 'find ./utils -type f -name \'*.odin\''], capture_output=True).stdout.decode('utf-8').splitlines())
 
   for test in tests:

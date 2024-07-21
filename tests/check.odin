@@ -1,6 +1,6 @@
 package tests
 
-import b "../build_odin"
+import b ".."
 
 main :: proc() {
     b.start(proc() -> (ok: bool) {

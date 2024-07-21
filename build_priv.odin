@@ -1,5 +1,5 @@
 //+private
-package build_lib
+package build_odin
 
 import "base:runtime"
 import "core:encoding/ansi"

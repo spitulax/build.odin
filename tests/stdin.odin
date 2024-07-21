@@ -1,6 +1,6 @@
 package tests
 
-import b "../build_odin"
+import b ".."
 
 stdin_start :: proc() -> (ok: bool) {
     sh := b.program("sh")

@@ -1,6 +1,6 @@
 package tests
 
-import b "../build_odin"
+import b ".."
 import "core:log"
 import "core:time"
 import "utils"
