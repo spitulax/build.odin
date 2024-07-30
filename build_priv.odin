@@ -8,6 +8,8 @@ import "core:log"
 import "core:mem"
 import "core:mem/virtual"
 import "core:os"
+import "core:reflect"
+import "core:strconv"
 import "core:strings"
 import "core:sync"
 
@@ -17,6 +19,8 @@ g_process_tracker_mutex: ^sync.Mutex
 g_shared_mem_arena: virtual.Arena
 g_shared_mem_allocator: mem.Allocator
 g_prog_flags: Prog_Flags
+g_initialized: bool
+FLAG_MAP_SEPARATOR :: ":"
 
 
 Location :: runtime.Source_Code_Location
@@ -188,13 +192,216 @@ create_builder_logger :: proc(
 }
 
 
+Option :: struct {
+    value:     Option_Type,
+    desc:      string,
+    specified: bool,
+}
+
+Option_Type :: union {
+    i32,
+    f32,
+    string,
+    bool,
+    OS_Type,
+    Arch_Type,
+}
+
+@(require_results)
+option_set :: proc(key: string, value: Option_Type, loc := #caller_location) -> (ok: bool) {
+    if g_initialized {return true}
+
+    if _, get_ok := g_options[key]; !get_ok {
+        log.errorf("Key `%s` does not exist", key, location = loc)
+        return
+    }
+
+    x := &g_options[key]
+    switch v in value {
+    case string:
+        x.value = strings.clone(v)
+    case i32, f32, bool, OS_Type, Arch_Type:
+        x.value = v
+    }
+
+    x.specified = true
+    return true
+}
+
+@(require_results)
+option_set_from_str :: proc(key: string, value: string, loc := #caller_location) -> (ok: bool) {
+    if g_initialized {return true}
+
+    elem: Option
+    elem_ok: bool
+    if elem, elem_ok = g_options[key]; !elem_ok {
+        log.errorf("Key `%s` does not exist", key, location = loc)
+        return
+    }
+
+    // REFACTOR:
+    x := &g_options[key]
+    switch v in elem.value {
+    case string:
+        x.value = strings.clone(v)
+    case i32:
+        parsed, parse_ok := strconv.parse_int(value)
+        if !parse_ok {
+            log.errorf("Failed to parse `%s` to integer", value, location = loc)
+            return
+        }
+        x.value = i32(parsed)
+    case f32:
+        parsed, parse_ok := strconv.parse_f32(value)
+        if !parse_ok {
+            log.errorf("Failed to parse `%s` to float", value, location = loc)
+            return
+        }
+        x.value = parsed
+    case bool:
+        parsed, parse_ok := strconv.parse_bool(value)
+        if !parse_ok {
+            log.errorf("Failed to parse `%s` to boolean", value, location = loc)
+            return
+        }
+        x.value = parsed
+    case Arch_Type:
+        enum_val, enum_val_ok := reflect.enum_from_name(Arch_Type, value)
+        if !enum_val_ok {
+            log.errorf("`%s` does not exist in `Arch_Type`", value, location = loc)
+            return
+        }
+        x.value = enum_val
+    case OS_Type:
+        enum_val, enum_val_ok := reflect.enum_from_name(OS_Type, value)
+        if !enum_val_ok {
+            log.errorf("`%s` does not exist in `OS_Type`", value, location = loc)
+            log.errorf("Accepted values:", location = loc)
+            log.errorf(
+                "     %s",
+                concat_string_sep(reflect.enum_field_names(OS_Type), ", ", context.temp_allocator),
+                location = loc,
+            )
+            return
+        }
+        x.value = enum_val
+    }
+
+    x.specified = true
+    return true
+}
+
+g_options: map[string]Option
+
+g_options_destroy :: proc() {
+    for _, &val in g_options {
+        #partial switch v in val.value {
+        case string:
+            delete(v)
+        }
+        delete(val.desc)
+    }
+    delete(g_options)
+}
+
+
+Flag_Type :: union #no_nil {
+    ^int,
+    ^string,
+    ^bool,
+    proc(_: string, _: runtime.Source_Code_Location) -> bool,
+}
+
+Flag :: struct {
+    name:      string,
+    disp_name: string,
+    ptr:       Flag_Type,
+    desc:      string,
+}
+
+g_flags := []Flag {
+    {
+        name = "-D",
+        disp_name = "-D <key>" + FLAG_MAP_SEPARATOR + "<value>",
+        ptr = proc(a: string, loc: runtime.Source_Code_Location) -> bool {     // odinfmt seems to get crazy on this
+            args := strings.split(a, FLAG_MAP_SEPARATOR)
+            defer delete(args)
+            if len(args) != 2 {
+                log.errorf("`%s` wrong amount of arguments", a, location = loc)
+                return false
+            }
+            option_set_from_str(args[0], args[1], loc) or_return
+            return true
+        },
+        desc = "Override user-defined options",
+    },
+    {name = "--echo", ptr = &g_prog_flags.echo, desc = "Echo the command that is running"},
+    {
+        name = "--track-alloc",
+        ptr = &g_prog_flags.track_alloc,
+        desc = "Track for unfreed and double freed memory",
+    },
+    {
+        name = "--verbose",
+        ptr = &g_prog_flags.verbose,
+        desc = "Echo the stage evaluations and executions",
+    },
+}
+
 usage :: proc() {
+    min_width :: 10
+    names := make([dynamic]string)
+    defer delete(names)
+    for x in g_flags {
+        append(&names, x.disp_name if x.disp_name != "" else x.name)
+    }
+    for k, _ in g_options {
+        append(&names, k)
+    }
+    max_width := min_width
+    for x in names {
+        max_width = max(len(x), max_width)
+    }
+
     fmt.println("./build [options]...")
     fmt.println()
-    fmt.println("Options:")
-    fmt.println("    --track-alloc      Track for unfreed and double freed memory")
-    fmt.println("    --echo             Echo the command that is running")
-    fmt.println("    --verbose          Echo the stage evaluations and executions")
+    if len(g_options) > 0 {
+        fmt.println("User-defined options:")
+        for k, v in g_options {
+            fmt.print("    ")
+            fmt.print(k)
+            for _ in 0 ..< max_width - len(k) + 4 {
+                fmt.print(" ")
+            }
+            fmt.print(v.desc)
+            type := reflect.union_variant_typeid(v.value)
+            fmt.printf(" (%v)", type)
+            if _, ti_ok := runtime.type_info_base(type_info_of(type)).variant.(runtime.Type_Info_Enum);
+               ti_ok {
+                names := reflect.enum_field_names(type)
+                fmt.println()
+                for x, i in names {
+                    if i > 0 {
+                        fmt.println()
+                    }
+                    fmt.printf("        - %s", x)
+                }
+            }
+            fmt.println()
+        }
+        fmt.println()
+    }
+    fmt.println("Flags:")
+    for x in g_flags {
+        name := x.disp_name if x.disp_name != "" else x.name
+        fmt.print("    ")
+        fmt.print(name)
+        for _ in 0 ..< max_width - len(name) + 4 {
+            fmt.print(" ")
+        }
+        fmt.print(x.desc)
+        fmt.println()
+    }
 }
 
 Prog_Flags :: struct {
@@ -224,16 +431,26 @@ parse_args :: proc() -> (ok: bool) {
             break
         }
 
-        switch arg {
-        case "--track-alloc":
-            g_prog_flags.track_alloc = true
-        case "--echo":
-            g_prog_flags.echo = true
-        case "--verbose":
-            g_prog_flags.verbose = true
-        case:
-            return
+        success := false
+        for flag in g_flags {
+            if flag.name == arg {
+                success = true
+                switch v in flag.ptr {
+                case ^bool:
+                    v^ = true
+                case ^int:
+                    unimplemented()
+                case ^string:
+                    unimplemented()
+                case proc(_: string, _: runtime.Source_Code_Location) -> bool:
+                    arg, arg_ok = next_arg(&args)
+                    location := runtime.Source_Code_Location{}
+                    v(arg, location) or_return
+                }
+                break
+            }
         }
+        if !success || !arg_ok {return}
     }
 
     return true

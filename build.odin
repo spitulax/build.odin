@@ -6,15 +6,19 @@ import "core:log"
 import "core:mem"
 import "core:os"
 import "core:path/filepath"
+import "core:reflect"
 import "core:strings"
 import "core:time"
 
 
-OS_Set :: bit_set[runtime.Odin_OS_Type]
+OS_Set :: bit_set[OS_Type]
 SUPPORTED_OS :: OS_Set{.Linux}
 #assert(ODIN_OS in SUPPORTED_OS)
 
 
+OS_Type :: runtime.Odin_OS_Type
+Arch_Type :: runtime.Odin_Arch_Type
+Optimization_Type :: runtime.Odin_Optimization_Mode
 Start_Proc :: #type proc() -> bool
 
 start :: proc(start_proc: Start_Proc) {
@@ -28,6 +32,7 @@ start :: proc(start_proc: Start_Proc) {
     }
 
     defer {
+        g_options_destroy()
         process_tracker_destroy(shared_mem, shared_mem_size)
         free_all(context.temp_allocator)
         if g_prog_flags.track_alloc {
@@ -50,18 +55,20 @@ start :: proc(start_proc: Start_Proc) {
         os.exit(!ok)
     }
 
-    if !parse_args() {
-        usage()
-        ok = false
-        return
-    }
-
     context_allocator := context.allocator
     if g_prog_flags.track_alloc {
         mem.tracking_allocator_init(&mem_track, context_allocator)
         context_allocator = mem.tracking_allocator(&mem_track)
     }
     context.allocator = context_allocator
+
+    if !parse_args() {
+        usage()
+        ok = false
+        return
+    }
+
+    g_initialized = true
 
     if !start_proc() {
         ok = false
@@ -322,5 +329,67 @@ destroy_stages :: proc(root: ^Stage) {
         destroy_stages(dep)
     }
     stage_destroy(root)
+}
+
+
+// DOCS: this procedure can only be called before start()
+option_add :: proc {
+    option_add_default,
+    option_add_nodefault,
+}
+
+option_add_default :: proc(key: string, $T: typeid, default: T, desc: string) {
+    if g_initialized {return}
+
+    if _, get_ok := g_options[key]; get_ok {
+        //fmt.eprintfln("Option `%s` already exist, ignoring", key)
+        return
+    }
+    value: Option_Type = default
+    if value == nil {
+        fmt.eprintfln("Option `%s`: Type `%v` is not supported", key, type_info_of(T).id)
+        os.exit(1)
+    }
+    g_options[key] = {
+        value = value,
+        desc  = strings.clone(desc),
+    }
+}
+
+option_add_nodefault :: proc(key: string, $T: typeid, desc: string) {
+    option_add_default(key, T, T{}, desc)
+}
+
+option_get :: proc(key: string, $T: typeid, loc := #caller_location) -> (value: T, ok: bool) {
+    elem: Option
+    elem_ok: bool
+    if elem, elem_ok = g_options[key]; !elem_ok {
+        log.errorf("Key `%s` does not exist", key, location = loc)
+        return
+    }
+    if !elem.specified {
+        return
+    }
+    value_unwrapped, unwrap_ok := elem.value.(T)
+    if !unwrap_ok {
+        log.errorf(
+            "Could not unwrap the value of `%s` to type %v",
+            key,
+            type_info_of(T).id,
+            location = loc,
+        )
+        return
+    }
+    value = value_unwrapped
+    ok = true
+    return
+}
+
+// DOCS: for debugging purpose
+options_print :: proc() {
+    for k, v in g_options {
+        if !v.specified {continue}
+        log.debugf("- %s:%v = %#v", k, reflect.union_variant_typeid(v.value), v.value)
+    }
 }
 
