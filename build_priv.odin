@@ -227,11 +227,11 @@ option_type_default :: proc($T: typeid) -> T where intrinsics.type_is_variant_of
 }
 
 @(require_results)
-option_set :: proc(key: string, value: Option_Type, loc := #caller_location) -> (ok: bool) {
+option_set :: proc(key: string, value: Option_Type) -> (ok: bool) {
     context.allocator = g_default_allocator
 
     if _, get_ok := g_options[key]; !get_ok {
-        log.errorf("Key `%s` does not exist", key, location = loc)
+        log.errorf("Key `%s` does not exist", key, location = {})
         return
     }
 
@@ -247,25 +247,21 @@ option_set :: proc(key: string, value: Option_Type, loc := #caller_location) -> 
 }
 
 @(require_results)
-option_set_from_str :: proc(key: string, value: string, loc := #caller_location) -> (ok: bool) {
+option_set_from_str :: proc(key: string, value: string) -> (ok: bool) {
     context.allocator = g_default_allocator
 
     elem: Option
     elem_ok: bool
     if elem, elem_ok = g_options[key]; !elem_ok {
-        log.errorf("Key `%s` does not exist", key, location = loc)
+        log.errorf("Key `%s` does not exist", key, location = {})
         return
     }
 
-    parse :: proc(
-        x: ^Option,
-        value: string,
-        parser: proc(_: string) -> ($T, bool),
-        loc: runtime.Source_Code_Location,
-    ) -> bool {
+    @(require_results)
+    parse :: proc(x: ^Option, value: string, parser: proc(_: string) -> ($T, bool)) -> bool {
         parsed, parse_ok := parser(value)
         if !parse_ok {
-            log.errorf("Failed to parse `%s` into %v", value, typeid_of(T), location = loc)
+            log.errorf("Failed to parse `%s` into %v", value, typeid_of(T), location = {})
             return false
         }
         x.value = parsed
@@ -281,33 +277,33 @@ option_set_from_str :: proc(key: string, value: string, loc := #caller_location)
             parsed, ok := strconv.parse_int(s)
             return i32(parsed), ok
         }
-        parse(x, value, parse_int, loc) or_return
+        parse(x, value, parse_int) or_return
     case f32:
         parse_f32 :: proc(s: string) -> (f32, bool) {
             return strconv.parse_f32(s)
         }
-        parse(x, value, parse_f32, loc) or_return
+        parse(x, value, parse_f32) or_return
     case bool:
         parse_bool :: proc(s: string) -> (bool, bool) {
             return strconv.parse_bool(s)
         }
-        parse(x, value, parse_bool, loc) or_return
+        parse(x, value, parse_bool) or_return
     case Arch_Type:
         enum_val, enum_val_ok := reflect.enum_from_name(Arch_Type, value)
         if !enum_val_ok {
-            log.errorf("`%s` does not exist in `Arch_Type`", value, location = loc)
+            log.errorf("`%s` does not exist in `Arch_Type`", value, location = {})
             return
         }
         x.value = enum_val
     case OS_Type:
         enum_val, enum_val_ok := reflect.enum_from_name(OS_Type, value)
         if !enum_val_ok {
-            log.errorf("`%s` does not exist in `OS_Type`", value, location = loc)
-            log.errorf("Accepted values:", location = loc)
+            log.errorf("`%s` does not exist in `OS_Type`", value, location = {})
+            log.errorf("Accepted values:", location = {})
             log.errorf(
                 "     %s",
                 concat_string_sep(reflect.enum_field_names(OS_Type), ", ", context.temp_allocator),
-                location = loc,
+                location = {},
             )
             return
         }
@@ -337,7 +333,7 @@ Flag_Type :: union #no_nil {
     ^int,
     ^string,
     ^bool,
-    proc(_: string, _: runtime.Source_Code_Location) -> bool,
+    proc(_: string) -> bool,
 }
 
 Flag :: struct {
@@ -351,14 +347,14 @@ g_flags := []Flag {
     {
         name = "-D",
         disp_name = "-D <key>" + FLAG_MAP_SEPARATOR + "<value>",
-        ptr = proc(a: string, loc: runtime.Source_Code_Location) -> bool {     // odinfmt seems to get crazy on this
+        ptr = proc(a: string) -> bool {     // odinfmt seems to get crazy on this
             args := strings.split(a, FLAG_MAP_SEPARATOR)
             defer delete(args)
             if len(args) != 2 {
-                log.errorf("`%s` wrong amount of arguments", a, location = loc)
+                log.errorf("`%s` wrong amount of arguments", a, location = {})
                 return false
             }
-            option_set_from_str(args[0], args[1], loc) or_return
+            option_set_from_str(args[0], args[1]) or_return
             return true
         },
         desc = "Override user-defined options",
@@ -470,10 +466,9 @@ parse_args :: proc() -> (ok: bool) {
                     unimplemented()
                 case ^string:
                     unimplemented()
-                case proc(_: string, _: runtime.Source_Code_Location) -> bool:
+                case proc(_: string) -> bool:
                     arg, arg_ok = next_arg(&args)
-                    location := runtime.Source_Code_Location{}
-                    v(arg, location) or_return
+                    v(arg) or_return
                 }
                 break
             }
