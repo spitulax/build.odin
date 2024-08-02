@@ -8,6 +8,10 @@ force: bool = False
 dont_run: bool = False
 tests: list[str] = []
 
+extra_run_args = {
+  "options": "-D optimization:3 -D arch:amd64 -D features:foo,bar,baz"
+}
+
 def calc_max_modtime(files):
   modified = 0
   for file in files:
@@ -53,6 +57,8 @@ if __name__ == '__main__':
 
   if len(tests) == 0:
     tests = subprocess.run(['sh', '-c', 'find -maxdepth 1 -type f -name \'*.odin\' -execdir bash -c \'printf "%s\n" "${@%.*}"\' bash {} +'], capture_output=True).stdout.decode('utf-8').splitlines()
+  for i in range(len(tests)):
+    tests[i] = tests[i].removeprefix('./')
 
   try:
     os.mkdir('./bin')
@@ -94,7 +100,10 @@ if __name__ == '__main__':
       print('~~~~~~~~~~~~~~~~~~~~')
       print(f'Running {test}...')
       print('\033[0m', end='', flush=True)
-      if subprocess.run(['sh', '-c', f'./{test_bin} --track-alloc --echo --verbose']).returncode == 0:
+      extra_arg = ""
+      if test in extra_run_args:
+        extra_arg = extra_run_args[test]
+      if subprocess.run(['sh', '-c', f'./{test_bin} --track-alloc --echo --verbose {extra_arg}']).returncode == 0:
         print('\033[1;32m', end='', flush=True)
         print(f'{test} passed')
         print('~~~~~~~~~~~~~~~~~~~~')

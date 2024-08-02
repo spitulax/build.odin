@@ -1,5 +1,6 @@
 package build_odin
 
+import "base:intrinsics"
 import "base:runtime"
 import "core:fmt"
 import "core:log"
@@ -11,14 +12,14 @@ import "core:strings"
 import "core:time"
 
 
-OS_Set :: bit_set[OS_Type]
+OS_Set :: bit_set[runtime.Odin_OS_Type]
 SUPPORTED_OS :: OS_Set{.Linux}
 #assert(ODIN_OS in SUPPORTED_OS)
 
 
-OS_Type :: runtime.Odin_OS_Type
-Arch_Type :: runtime.Odin_Arch_Type
-Optimization_Type :: runtime.Odin_Optimization_Mode
+OS_Type :: distinct runtime.Odin_OS_Type
+Arch_Type :: distinct runtime.Odin_Arch_Type
+Optimization_Type :: distinct runtime.Odin_Optimization_Mode
 Start_Proc :: #type proc() -> bool
 
 start :: proc(start_proc: Start_Proc) {
@@ -61,14 +62,15 @@ start :: proc(start_proc: Start_Proc) {
         context_allocator = mem.tracking_allocator(&mem_track)
     }
     context.allocator = context_allocator
+    g_default_allocator = context_allocator
+
+    g_initialized = true
 
     if !parse_args() {
         usage()
         ok = false
         return
     }
-
-    g_initialized = true
 
     if !start_proc() {
         ok = false
@@ -299,9 +301,7 @@ stage_clone :: proc(self: Stage, allocator := context.allocator) -> Stage {
 
 stage_name :: proc(self: Stage) -> string {
     return(
-        (self.name != "") \
-        ? self.name \
-        : fmt.tprintf("<%v:%v>", filepath.base(self.location.file_path), self.location.line) \
+        (self.name != "") ? self.name : fmt.tprintf("<%v:%v>", filepath.base(self.location.file_path), self.location.line) \
     )
 }
 
@@ -338,18 +338,22 @@ option_add :: proc {
     option_add_nodefault,
 }
 
-option_add_default :: proc(key: string, $T: typeid, default: T, desc: string) {
-    if g_initialized {return}
+option_add_default :: proc(
+    key: string,
+    $T: typeid,
+    default: T,
+    desc: string,
+) where intrinsics.type_is_variant_of(Option_Type, T) {
+    if g_initialized {
+        log.warnf("`%s` should be called before the start procedure", #procedure, location = {})
+        return
+    }
 
     if _, get_ok := g_options[key]; get_ok {
         //fmt.eprintfln("Option `%s` already exist, ignoring", key)
         return
     }
     value: Option_Type = default
-    if value == nil {
-        fmt.eprintfln("Option `%s`: Type `%v` is not supported", key, type_info_of(T).id)
-        os.exit(1)
-    }
     g_options[key] = {
         value = value,
         desc  = strings.clone(desc),
@@ -357,25 +361,29 @@ option_add_default :: proc(key: string, $T: typeid, default: T, desc: string) {
 }
 
 option_add_nodefault :: proc(key: string, $T: typeid, desc: string) {
-    option_add_default(key, T, T{}, desc)
+    option_add_default(key, T, option_type_default(T), desc)
 }
 
-option_get :: proc(key: string, $T: typeid, loc := #caller_location) -> (value: T, ok: bool) {
+option_get :: proc(
+    key: string,
+    $type: typeid,
+    loc := #caller_location,
+) -> (
+    value: type,
+    ok: bool,
+) {
     elem: Option
     elem_ok: bool
     if elem, elem_ok = g_options[key]; !elem_ok {
         log.errorf("Key `%s` does not exist", key, location = loc)
         return
     }
-    if !elem.specified {
-        return
-    }
-    value_unwrapped, unwrap_ok := elem.value.(T)
+    value_unwrapped, unwrap_ok := elem.value.(type)
     if !unwrap_ok {
         log.errorf(
             "Could not unwrap the value of `%s` to type %v",
             key,
-            type_info_of(T).id,
+            typeid_of(type),
             location = loc,
         )
         return
@@ -388,7 +396,6 @@ option_get :: proc(key: string, $T: typeid, loc := #caller_location) -> (value: 
 // DOCS: for debugging purpose
 options_print :: proc() {
     for k, v in g_options {
-        if !v.specified {continue}
         log.debugf("- %s:%v = %#v", k, reflect.union_variant_typeid(v.value), v.value)
     }
 }

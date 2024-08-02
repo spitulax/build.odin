@@ -1,6 +1,7 @@
 //+private
 package build_odin
 
+import "base:intrinsics"
 import "base:runtime"
 import "core:encoding/ansi"
 import "core:fmt"
@@ -18,6 +19,7 @@ g_process_tracker: ^Process_Tracker
 g_process_tracker_mutex: ^sync.Mutex
 g_shared_mem_arena: virtual.Arena
 g_shared_mem_allocator: mem.Allocator
+g_default_allocator: mem.Allocator
 g_prog_flags: Prog_Flags
 g_initialized: bool
 FLAG_MAP_SEPARATOR :: ":"
@@ -193,9 +195,8 @@ create_builder_logger :: proc(
 
 
 Option :: struct {
-    value:     Option_Type,
-    desc:      string,
-    specified: bool,
+    value: Option_Type,
+    desc:  string,
 }
 
 Option_Type :: union {
@@ -207,9 +208,27 @@ Option_Type :: union {
     Arch_Type,
 }
 
+option_type_default :: proc($T: typeid) -> T where intrinsics.type_is_variant_of(Option_Type, T) {
+    when T == i32 {
+        return 0
+    } else when T == f32 {
+        return 0e0
+    } else when T == string {
+        return ""
+    } else when T == bool {
+        return false
+    } else when T == OS_Type {
+        return OS_Type.Unknown
+    } else when T == Arch_Type {
+        return Arch_Type.Unknown
+    } else {
+        unreachable()
+    }
+}
+
 @(require_results)
 option_set :: proc(key: string, value: Option_Type, loc := #caller_location) -> (ok: bool) {
-    if g_initialized {return true}
+    context.allocator = g_default_allocator
 
     if _, get_ok := g_options[key]; !get_ok {
         log.errorf("Key `%s` does not exist", key, location = loc)
@@ -224,13 +243,12 @@ option_set :: proc(key: string, value: Option_Type, loc := #caller_location) -> 
         x.value = v
     }
 
-    x.specified = true
     return true
 }
 
 @(require_results)
 option_set_from_str :: proc(key: string, value: string, loc := #caller_location) -> (ok: bool) {
-    if g_initialized {return true}
+    context.allocator = g_default_allocator
 
     elem: Option
     elem_ok: bool
@@ -239,32 +257,41 @@ option_set_from_str :: proc(key: string, value: string, loc := #caller_location)
         return
     }
 
-    // REFACTOR:
+    parse :: proc(
+        x: ^Option,
+        value: string,
+        parser: proc(_: string) -> ($T, bool),
+        loc: runtime.Source_Code_Location,
+    ) -> bool {
+        parsed, parse_ok := parser(value)
+        if !parse_ok {
+            log.errorf("Failed to parse `%s` into %v", value, typeid_of(T), location = loc)
+            return false
+        }
+        x.value = parsed
+        return true
+    }
+
     x := &g_options[key]
     switch v in elem.value {
     case string:
-        x.value = strings.clone(v)
+        x.value = strings.clone(value)
     case i32:
-        parsed, parse_ok := strconv.parse_int(value)
-        if !parse_ok {
-            log.errorf("Failed to parse `%s` to integer", value, location = loc)
-            return
+        parse_int :: proc(s: string) -> (i32, bool) {
+            parsed, ok := strconv.parse_int(s)
+            return i32(parsed), ok
         }
-        x.value = i32(parsed)
+        parse(x, value, parse_int, loc) or_return
     case f32:
-        parsed, parse_ok := strconv.parse_f32(value)
-        if !parse_ok {
-            log.errorf("Failed to parse `%s` to float", value, location = loc)
-            return
+        parse_f32 :: proc(s: string) -> (f32, bool) {
+            return strconv.parse_f32(s)
         }
-        x.value = parsed
+        parse(x, value, parse_f32, loc) or_return
     case bool:
-        parsed, parse_ok := strconv.parse_bool(value)
-        if !parse_ok {
-            log.errorf("Failed to parse `%s` to boolean", value, location = loc)
-            return
+        parse_bool :: proc(s: string) -> (bool, bool) {
+            return strconv.parse_bool(s)
         }
-        x.value = parsed
+        parse(x, value, parse_bool, loc) or_return
     case Arch_Type:
         enum_val, enum_val_ok := reflect.enum_from_name(Arch_Type, value)
         if !enum_val_ok {
@@ -287,13 +314,14 @@ option_set_from_str :: proc(key: string, value: string, loc := #caller_location)
         x.value = enum_val
     }
 
-    x.specified = true
     return true
 }
 
 g_options: map[string]Option
 
 g_options_destroy :: proc() {
+    context.allocator = g_default_allocator
+
     for _, &val in g_options {
         #partial switch v in val.value {
         case string:

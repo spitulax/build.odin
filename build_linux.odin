@@ -303,7 +303,7 @@ _program :: proc($name: string, location := #caller_location) -> Program {
     )
     g_prog_flags.echo = echo
     if !ok {
-        log.warnf("Failed to find `%s`", name)
+        log.warnf("Failed to find `%s`", name, location = location)
     }
     found := res.exit == nil && ok
     return {name = name, found = found}
