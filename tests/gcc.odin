@@ -27,7 +27,7 @@ build_stage_proc :: proc(self: ^b.Stage, userdata: rawptr) -> (ok: bool) {
         return false
     }
 
-    utils.expect("Hello, World!\n", result2.stdout) or_return
+    utils.expect(result2.stdout, "Hello, World!\n") or_return
 
     return true
 }

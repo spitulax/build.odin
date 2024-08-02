@@ -12,7 +12,7 @@ cmd_sync_start :: proc() -> (ok: bool) {
     sh := b.program("sh")
     for &result in results {
         result = b.run_prog_sync(sh, {"-c", "echo 'HELLO, WORLD!'"}, .Capture) or_return
-        utils.expect("HELLO, WORLD!\n", result.stdout) or_return
+        utils.expect(result.stdout, "HELLO, WORLD!\n") or_return
     }
     log.infof("Time elapsed: %v", time.since(before))
     return true

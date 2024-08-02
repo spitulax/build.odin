@@ -14,7 +14,7 @@ cmd_async_start :: proc() -> (ok: bool) {
     }
     results := b.process_wait_many(processes[:], context.temp_allocator) or_return
     for result in results {
-        utils.expect("HELLO, WORLD!\n", result.stdout) or_return
+        utils.expect(result.stdout, "HELLO, WORLD!\n") or_return
     }
     log.infof("Time elapsed: %v", time.since(before))
     return true

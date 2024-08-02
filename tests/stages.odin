@@ -50,7 +50,7 @@ stages_start :: proc() -> (ok: bool) {
 
     b.run_stages(&root_stage) or_return
 
-    utils.expect(2, userdata) or_return
+    utils.expect(userdata, 2) or_return
     return true
 }
 

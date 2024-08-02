@@ -12,7 +12,7 @@ hello_start :: proc() -> (ok: bool) {
 
     result = b.run_prog_sync(sh, {"-c", "echo 'Hello, World!'"}, .Capture) or_return
     assert(result.exit == nil && len(result.stderr) == 0)
-    utils.expect("Hello, World!\n", result.stdout) or_return
+    utils.expect(result.stdout, "Hello, World!\n") or_return
     b.process_result_destroy(&result)
 
     result = b.run_prog_sync(sh, {"-c", "echo 'Hello, World!'"}, .Silent) or_return
