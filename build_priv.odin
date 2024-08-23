@@ -347,8 +347,8 @@ g_flags := []Flag {
     {
         name = "-D",
         disp_name = "-D <key>" + FLAG_MAP_SEPARATOR + "<value>",
-        ptr = proc(a: string) -> bool {     // odinfmt seems to get crazy on this
-            args := strings.split(a, FLAG_MAP_SEPARATOR)
+        ptr = proc(a: string) -> bool {
+            args := strings.split_n(a, FLAG_MAP_SEPARATOR, 2)
             defer delete(args)
             if len(args) != 2 {
                 log.errorf("`%s` wrong amount of arguments", a, location = {})
