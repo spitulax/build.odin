@@ -22,6 +22,7 @@ g_shared_mem_allocator: mem.Allocator
 g_default_allocator: mem.Allocator
 g_prog_flags: Prog_Flags
 g_initialized: bool
+g_paths: [dynamic]Filepath
 FLAG_MAP_SEPARATOR :: ":"
 
 

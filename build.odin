@@ -33,6 +33,7 @@ start :: proc(start_proc: Start_Proc) {
     }
 
     defer {
+        delete(g_paths)
         g_options_destroy()
         process_tracker_destroy(shared_mem, shared_mem_size)
         free_all(context.temp_allocator)
@@ -63,6 +64,8 @@ start :: proc(start_proc: Start_Proc) {
     }
     context.allocator = context_allocator
     g_default_allocator = context_allocator
+
+    g_paths = make([dynamic]Filepath, g_default_allocator)
 
     g_initialized = true
 
@@ -403,15 +406,12 @@ options_print :: proc() {
 
 Filepath :: distinct string
 
-filepath :: proc(
-    path: string,
-    allocator := context.allocator,
-    location := #caller_location,
-) -> (
-    res: Filepath,
-    ok: bool,
-) {
-    return _filepath(path, allocator, location)
+filepath :: proc(path: string, location := #caller_location) -> (res: ^Filepath, ok: bool) {
+    return _filepath(path, location)
+}
+
+filepaths_clear :: proc() {
+    clear(&g_paths)
 }
 
 
