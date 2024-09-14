@@ -400,3 +400,54 @@ options_print :: proc() {
     }
 }
 
+
+Filepath :: distinct string
+
+filepath :: proc(
+    path: string,
+    allocator := context.allocator,
+    location := #caller_location,
+) -> (
+    res: Filepath,
+    ok: bool,
+) {
+    return _filepath(path, allocator, location)
+}
+
+
+File_Stat :: struct {
+    modtime: time.Time,
+}
+
+file_stat :: proc(path: Filepath, location: Location) -> (res: File_Stat, ok: bool) {
+    return _file_stat(path, location)
+}
+
+
+Builder :: struct {
+    name:         string,
+    target:       []Filepath,
+    source:       []Filepath,
+    extra_prereq: []Filepath,
+    procedure:    Builder_Proc,
+}
+
+// TODO: should we add `userdata`?
+Builder_Proc :: #type proc(self: ^Builder, stage: ^Stage) -> (ok: bool)
+
+builder_stage :: proc(
+    self: ^Builder,
+    require: bool = true,
+    allocator := context.allocator,
+    location := #caller_location,
+) -> Stage {
+    return stage_make(builder_proc(self), self.name, self, require, allocator, location)
+}
+
+builder_proc :: proc(self: ^Builder) -> Stage_Proc {
+    return proc(self: ^Stage, userdata: rawptr) -> bool {
+            builder := cast(^Builder)userdata
+            return builder->procedure(self)
+        }
+}
+

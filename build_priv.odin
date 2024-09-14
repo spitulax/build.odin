@@ -25,6 +25,7 @@ g_initialized: bool
 FLAG_MAP_SEPARATOR :: ":"
 
 
+Allocator :: runtime.Allocator
 Location :: runtime.Source_Code_Location
 
 

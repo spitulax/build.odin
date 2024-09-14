@@ -15,6 +15,14 @@ import "core:sys/linux"
 import "core:time"
 
 
+foreign import c "system:c"
+
+@(default_calling_convention = "c")
+foreign c {
+    realpath :: proc(path: cstring, resolved_path: [^]u8) -> [^]u8 ---
+}
+
+
 _Exit :: distinct u32
 _Signal :: distinct linux.Signal
 _Process_Exit :: union {
@@ -307,6 +315,51 @@ _program :: proc($name: string, location := #caller_location) -> Program {
     }
     found := res.exit == nil && ok
     return {name = name, found = found}
+}
+
+
+_filepath :: proc(
+    path: string,
+    allocator: Allocator,
+    location: Location,
+) -> (
+    res: Filepath,
+    ok: bool,
+) {
+    PATH_MAX :: 1024
+    buf := make([]byte, PATH_MAX, allocator)
+    defer delete(buf)
+    rp := realpath(strings.clone_to_cstring(path, context.temp_allocator), raw_data(buf))
+    if rp == nil {
+        log.errorf(
+            "Failed to get absolute path to `%s`: %s",
+            path,
+            libc.strerror(libc.errno()^),
+            location = location,
+        )
+        return
+    }
+
+    return cast(Filepath)strings.clone_from_cstring(cast(cstring)rp, allocator), true
+}
+
+
+_file_stat :: proc(path: Filepath, location: Location) -> (res: File_Stat, ok: bool) {
+    stat: linux.Stat
+    if errno := linux.stat(
+        strings.clone_to_cstring(cast(string)path, context.temp_allocator),
+        &stat,
+    ); errno != .NONE {
+        log.errorf(
+            "Failed to stat `%s`: %s",
+            cast(string)path,
+            libc.strerror(i32(errno)),
+            location = location,
+        )
+        return
+    }
+
+    return {modtime = time.unix(i64(stat.mtime.time_sec), i64(stat.mtime.time_nsec))}, true
 }
 
 
