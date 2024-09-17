@@ -270,7 +270,6 @@ Stage_Status :: enum {
     Waiting,
     Success,
     Failed,
-    Ignored,
 }
 
 Stage_Proc :: #type proc(self: ^Stage, userdata: rawptr) -> (ok: bool)

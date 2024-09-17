@@ -88,13 +88,12 @@ stage_eval :: proc(self: ^Stage, location: Location) -> (ok: bool) {
         success := self->procedure(self.userdata)
         if !success {
             msg := fmt.tprintf("Failed to run root stage `%s`", stage_name(self^))
+            self.status = .Failed
             if self.require {
                 log.error(msg, location = location)
-                self.status = .Failed
                 return false
             } else {
                 log.warn(msg, location = location)
-                self.status = .Ignored
                 return true
             }
         }
