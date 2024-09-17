@@ -5,6 +5,7 @@ import "base:runtime"
 import "core:fmt"
 import "core:log"
 import "core:mem"
+import "core:mem/virtual"
 import "core:os"
 import "core:path/filepath"
 import "core:reflect"
@@ -33,7 +34,6 @@ start :: proc(start_proc: Start_Proc) {
     }
 
     defer {
-        delete(g_paths)
         g_options_destroy()
         process_tracker_destroy(shared_mem, shared_mem_size)
         free_all(context.temp_allocator)
@@ -65,7 +65,9 @@ start :: proc(start_proc: Start_Proc) {
     context.allocator = context_allocator
     g_default_allocator = context_allocator
 
-    g_paths = make([dynamic]Filepath, g_default_allocator)
+    if !init_allocators() {
+        return
+    }
 
     g_initialized = true
 
@@ -406,12 +408,12 @@ options_print :: proc() {
 
 Filepath :: distinct string
 
-filepath :: proc(path: string, location := #caller_location) -> (res: ^Filepath, ok: bool) {
-    return _filepath(path, location)
+path :: proc(path: string, location := #caller_location) -> (res: Filepath, ok: bool) {
+    return _path(path, location)
 }
 
 filepaths_clear :: proc() {
-    clear(&g_paths)
+    virtual.arena_free_all(&g_paths_arena)
 }
 
 
@@ -435,19 +437,21 @@ Builder :: struct {
 // TODO: should we add `userdata`?
 Builder_Proc :: #type proc(self: ^Builder, stage: ^Stage) -> (ok: bool)
 
+builder_verify :: proc(self: ^Builder) -> (ok: bool) {
+    return
+}
+
 builder_stage :: proc(
     self: ^Builder,
     require: bool = true,
     allocator := context.allocator,
     location := #caller_location,
 ) -> Stage {
-    return stage_make(builder_proc(self), self.name, self, require, allocator, location)
+    return stage_make(builder_proc, self.name, self, require, allocator, location)
 }
 
-builder_proc :: proc(self: ^Builder) -> Stage_Proc {
-    return proc(self: ^Stage, userdata: rawptr) -> bool {
-            builder := cast(^Builder)userdata
-            return builder->procedure(self)
-        }
+builder_proc :: proc(self: ^Stage, userdata: rawptr) -> bool {
+    builder := cast(^Builder)userdata
+    return builder->procedure(self)
 }
 

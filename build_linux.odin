@@ -318,8 +318,9 @@ _program :: proc($name: string, location := #caller_location) -> Program {
 }
 
 
-_filepath :: proc(path: string, location: Location) -> (res: ^Filepath, ok: bool) {
+_path :: proc(path: string, location: Location) -> (res: Filepath, ok: bool) {
     PATH_MAX :: 1024
+    context.allocator = g_paths_allocator
     buf := make([]byte, PATH_MAX)
     defer delete(buf)
     rp := realpath(strings.clone_to_cstring(path, context.temp_allocator), raw_data(buf))
@@ -333,8 +334,7 @@ _filepath :: proc(path: string, location: Location) -> (res: ^Filepath, ok: bool
         return
     }
 
-    append(&g_paths, cast(Filepath)strings.clone_from_cstring(cast(cstring)rp))
-    return &g_paths[len(g_paths) - 1], true
+    return Filepath(cstring(rp)), true
 }
 
 

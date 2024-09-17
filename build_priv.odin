@@ -22,7 +22,8 @@ g_shared_mem_allocator: mem.Allocator
 g_default_allocator: mem.Allocator
 g_prog_flags: Prog_Flags
 g_initialized: bool
-g_paths: [dynamic]Filepath
+g_paths_arena: virtual.Arena
+g_paths_allocator: mem.Allocator
 FLAG_MAP_SEPARATOR :: ":"
 
 
@@ -36,13 +37,20 @@ Process_Status :: struct {
     log:     strings.Builder,
 }
 
-
 process_tracker_init :: proc() -> (shared_mem: rawptr, shared_mem_size: uint, ok: bool) {
     return _process_tracker_init()
 }
 
 process_tracker_destroy :: proc(shared_mem: rawptr, size: uint) -> (ok: bool) {
     return _process_tracker_destroy(shared_mem, size)
+}
+
+
+init_allocators :: proc() -> (ok: bool) {
+    if virtual.arena_init_growing(&g_paths_arena) != .None {return}
+    g_paths_allocator = virtual.arena_allocator(&g_paths_arena)
+
+    return true
 }
 
 
