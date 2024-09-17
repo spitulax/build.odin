@@ -337,6 +337,10 @@ _path :: proc(path: string, location: Location) -> (res: Filepath, ok: bool) {
     return Filepath(cstring(rp)), true
 }
 
+_is_path_absolute :: proc(path: Filepath) -> bool {
+    return path[0] == '/'
+}
+
 
 _file_stat :: proc(path: Filepath, location: Location) -> (res: File_Stat, ok: bool) {
     stat: linux.Stat

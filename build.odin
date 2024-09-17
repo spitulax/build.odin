@@ -9,7 +9,6 @@ import "core:mem/virtual"
 import "core:os"
 import "core:path/filepath"
 import "core:reflect"
-import "core:slice"
 import "core:strings"
 import "core:time"
 
@@ -414,25 +413,16 @@ path :: proc(path: string, location := #caller_location) -> (res: Filepath, ok: 
     return _path(path, location)
 }
 
-verify_paths :: proc(
-    paths: []string,
-    allocator := context.allocator,
-    location := #caller_location,
-) -> (
-    res: []Filepath,
-    ok: bool,
-) {
-    paths_uniq := slice.unique(paths)
-    res = make([]Filepath, len(paths), allocator)
-    defer if !ok {
-        delete(res, allocator)
-        res = nil
-    }
-    for x, i in paths_uniq {
-        res[i] = path(x, location) or_return
+verify_paths :: proc(paths: []Filepath, location := #caller_location) -> (ok: bool) {
+    for &x in paths {
+        x = path(string(x), location) or_return
     }
     ok = true
     return
+}
+
+is_path_absolute :: proc(path: Filepath) -> bool {
+    return _is_path_absolute(path)
 }
 
 filepaths_clear :: proc() {
@@ -461,7 +451,10 @@ Builder :: struct {
 Builder_Proc :: #type proc(self: ^Builder, stage: ^Stage) -> (ok: bool)
 
 builder_verify :: proc(self: ^Builder) -> (ok: bool) {
-    return
+    verify_paths(self.target) or_return
+    verify_paths(self.source) or_return
+    verify_paths(self.extra_prereq) or_return
+    return true
 }
 
 builder_stage :: proc(
@@ -470,6 +463,7 @@ builder_stage :: proc(
     allocator := context.allocator,
     location := #caller_location,
 ) -> Stage {
+    builder_verify(self)
     return stage_make(builder_proc, self.name, self, require, allocator, location)
 }
 

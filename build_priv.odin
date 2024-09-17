@@ -99,6 +99,7 @@ stage_eval :: proc(self: ^Stage, location: Location) -> (ok: bool) {
             }
         }
     }
+    self.status = .Success
     return true
 }
 
@@ -488,7 +489,7 @@ parse_args :: proc() -> (ok: bool) {
                     unimplemented()
                 case ^string:
                     unimplemented()
-                case proc(_: string) -> bool:
+                case (proc(_: string) -> bool):
                     arg, arg_ok = next_arg(&args)
                     v(arg) or_return
                 }
