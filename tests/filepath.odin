@@ -9,6 +9,11 @@ filepath_start :: proc() -> (ok: bool) {
     log.info(path)
     log.info(stat)
 
+    paths := []string{"rats/gcc/main.c", "rats/stdin"}
+    realpaths := b.verify_paths(paths[:]) or_return
+    defer delete(realpaths)
+    log.info(realpaths)
+
     return true
 }
 

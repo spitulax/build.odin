@@ -85,7 +85,19 @@ stage_eval :: proc(self: ^Stage, location: Location) -> (ok: bool) {
         log.debugf("Running stage `%s`", stage_name(self^), location = location)
     }
     if self.status != .Failed {
-        self.status = (self.procedure(self, self.userdata)) ? .Success : .Failed
+        success := self->procedure(self.userdata)
+        if !success {
+            msg := fmt.tprintf("Failed to run root stage `%s`", stage_name(self^))
+            if self.require {
+                log.error(msg, location = location)
+                self.status = .Failed
+                return false
+            } else {
+                log.warn(msg, location = location)
+                self.status = .Ignored
+                return true
+            }
+        }
     }
     return true
 }

@@ -9,6 +9,7 @@ import "core:mem/virtual"
 import "core:os"
 import "core:path/filepath"
 import "core:reflect"
+import "core:slice"
 import "core:strings"
 import "core:time"
 
@@ -270,6 +271,7 @@ Stage_Status :: enum {
     Waiting,
     Success,
     Failed,
+    Ignored,
 }
 
 Stage_Proc :: #type proc(self: ^Stage, userdata: rawptr) -> (ok: bool)
@@ -410,6 +412,27 @@ Filepath :: distinct string
 
 path :: proc(path: string, location := #caller_location) -> (res: Filepath, ok: bool) {
     return _path(path, location)
+}
+
+verify_paths :: proc(
+    paths: []string,
+    allocator := context.allocator,
+    location := #caller_location,
+) -> (
+    res: []Filepath,
+    ok: bool,
+) {
+    paths_uniq := slice.unique(paths)
+    res = make([]Filepath, len(paths), allocator)
+    defer if !ok {
+        delete(res, allocator)
+        res = nil
+    }
+    for x, i in paths_uniq {
+        res[i] = path(x, location) or_return
+    }
+    ok = true
+    return
 }
 
 filepaths_clear :: proc() {
