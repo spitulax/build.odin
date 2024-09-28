@@ -483,3 +483,26 @@ builder_run :: proc(self: ^Builder, location := #caller_location) -> (ok: bool) 
     return run_stages(&stage, location)
 }
 
+
+build_dir :: proc(location := #caller_location) -> (dirpath: Filepath, ok: bool) {
+    if !os.is_dir("./build") {
+        if os.exists("./build") {
+            log.error("./build exists but it is not a directory", location = location)
+            return
+        }
+        if err := os.make_directory("./build"); err != nil {
+            log.error("Failed to create build directory:", err, location = location)
+            return
+        }
+        if g_prog_flags.verbose {
+            log.debugf(
+                "Created build directory at `%s`",
+                string(path("./build") or_return),
+                location = location,
+            )
+        }
+    }
+    // TODO: allocates duplicate every call
+    return path("./build") or_return, true
+}
+

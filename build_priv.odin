@@ -24,7 +24,6 @@ g_prog_flags: Prog_Flags
 g_initialized: bool
 g_paths_arena: virtual.Arena
 g_paths_allocator: mem.Allocator
-g_build_dir: Filepath
 FLAG_MAP_SEPARATOR :: ":"
 
 
