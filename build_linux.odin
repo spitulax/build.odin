@@ -1,4 +1,4 @@
-//+private
+#+private
 package build_odin
 
 import "base:runtime"

@@ -1,4 +1,4 @@
-//+private
+#+private
 package build_odin
 
 import "base:intrinsics"
@@ -24,6 +24,7 @@ g_prog_flags: Prog_Flags
 g_initialized: bool
 g_paths_arena: virtual.Arena
 g_paths_allocator: mem.Allocator
+g_build_dir: Filepath
 FLAG_MAP_SEPARATOR :: ":"
 
 
@@ -54,30 +55,32 @@ init_allocators :: proc() -> (ok: bool) {
 }
 
 
-stage_eval :: proc(self: ^Stage, location: Location) -> (ok: bool) {
+stage_eval :: proc(self: ^Stage, eval_deps: bool, location: Location) -> (ok: bool) {
     if self.status != .Unevaluated {return}
     if g_prog_flags.verbose {
         log.debugf("Evaluating stage `%s`", stage_name(self^), location = location)
     }
-    self.status = .Waiting
-    for &dep in self.dependencies {
-        stage_eval(dep, location)
-        if dep.status == .Failed {
-            msg := fmt.tprintf(
-                "Failed to run stage `%s` needed by `%s`",
-                stage_name(dep^),
-                concat_string_sep(
-                    stage_parents(dep, context.temp_allocator),
-                    " -> ",
-                    context.temp_allocator,
-                ),
-            )
-            if dep.require {
-                log.error(msg, location = location)
-                self.status = .Failed
-                return false
-            } else {
-                log.warn(msg, location = location)
+    if eval_deps {
+        self.status = .Waiting
+        for &dep in self.dependencies {
+            stage_eval(dep, true, location)
+            if dep.status == .Failed {
+                msg := fmt.tprintf(
+                    "Failed to run stage `%s` needed by `%s`",
+                    stage_name(dep^),
+                    concat_string_sep(
+                        stage_parents(dep, context.temp_allocator),
+                        " -> ",
+                        context.temp_allocator,
+                    ),
+                )
+                if dep.require {
+                    log.error(msg, location = location)
+                    self.status = .Failed
+                    return false
+                } else {
+                    log.warn(msg, location = location)
+                }
             }
         }
     }
@@ -87,7 +90,10 @@ stage_eval :: proc(self: ^Stage, location: Location) -> (ok: bool) {
     if self.status != .Failed {
         success := self->procedure(self.userdata)
         if !success {
-            msg := fmt.tprintf("Failed to run root stage `%s`", stage_name(self^))
+            msg := fmt.tprintf(
+                "Failed to run root stage `%s`" if eval_deps else "Failed to run stage `%s`",
+                stage_name(self^),
+            )
             self.status = .Failed
             if self.require {
                 log.error(msg, location = location)

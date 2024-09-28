@@ -325,8 +325,12 @@ print_stage_tree :: proc(root: ^Stage) {
     unimplemented()
 }
 
+run_stage :: proc(stage: ^Stage, location := #caller_location) -> (ok: bool) {
+    return stage_eval(stage, false, location)
+}
+
 run_stages :: proc(root: ^Stage, location := #caller_location) -> (ok: bool) {
-    return stage_eval(root, location)
+    return stage_eval(root, true, location)
 }
 
 destroy_stages :: proc(root: ^Stage) {
@@ -406,6 +410,7 @@ options_print :: proc() {
 }
 
 
+// NOTE: must use forward slashes
 Filepath :: distinct string
 
 path :: proc(path: string, location := #caller_location) -> (res: Filepath, ok: bool) {
@@ -444,6 +449,7 @@ Builder :: struct {
     source:       []Filepath,
     extra_prereq: []Filepath,
     procedure:    Builder_Proc,
+    userdata:     rawptr,
 }
 
 // TODO: should we add `userdata`?
@@ -469,5 +475,11 @@ builder_stage :: proc(
 builder_proc :: proc(self: ^Stage, userdata: rawptr) -> bool {
     builder := cast(^Builder)userdata
     return builder->procedure(self)
+}
+
+builder_run :: proc(self: ^Builder, location := #caller_location) -> (ok: bool) {
+    stage := builder_stage(self, location = location)
+    defer stage_destroy(&stage)
+    return run_stages(&stage, location)
 }
 
