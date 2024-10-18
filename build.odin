@@ -8,6 +8,7 @@ import "core:mem"
 import "core:mem/virtual"
 import "core:os"
 import "core:path/filepath"
+import "core:path/slashpath"
 import "core:reflect"
 import "core:strings"
 import "core:time"
@@ -504,5 +505,42 @@ build_dir :: proc(location := #caller_location) -> (dirpath: Filepath, ok: bool)
     }
     // TODO: allocates duplicate every call
     return path("./build") or_return, true
+}
+
+// DOCS: mkdir -p
+make_target_directory :: proc(
+    name: string,
+    location := #caller_location,
+) -> (
+    dirpath: Filepath,
+    ok: bool,
+) {
+    bd := build_dir() or_return
+    ps := slashpath.split_elements(name)
+    for i in 0 ..< len(ps) {
+        cur_p := make([]string, i + i)
+        defer delete(cur_p)
+        cur_p[0] = string(bd)
+        for j := i; j > 0; j -= 1 {
+            cur_p[j] = ps[i - j - 1]
+        }
+        log.info(cur_p)
+        p := slashpath.join(cur_p)
+        defer delete(p)
+        if !os.is_dir(p) {
+            if os.exists(p) {
+                log.errorf("`%s` exists but it is not a directory", p, location = location)
+                return
+            }
+            if err := os.make_directory(p); err != nil {
+                log.error("Failed to create build directory:", err, location = location)
+                return
+            }
+            if g_prog_flags.verbose {
+                log.debugf("Created irectory at `%s`", p, location = location)
+            }
+        }
+    }
+    return path("") or_return, true
 }
 
